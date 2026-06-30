@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FIFA Clubes Pro — Stats</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⚽</span>
+        <span>FIFA Clubes Pro <span class="logo-sub">Stats</span></span>
+      </div>
+      <nav class="nav-tabs">
+        <button class="nav-btn active" data-tab="upload">Subir Imágenes</button>
+        <button class="nav-btn" data-tab="history">Historial</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ======== TAB: UPLOAD ======== -->
+    <section class="tab active" id="tab-upload">
+
+      <!-- Drop Zone -->
+      <div class="card">
+        <h2 class="card-title">Subir capturas de rendimiento</h2>
+        <div class="dropzone" id="dropzone">
+          <div class="dropzone-icon">🖼️</div>
+          <p class="dropzone-text">Arrastrá las imágenes acá o <label for="fileInput" class="dropzone-link">hacé click para seleccionar</label></p>
+          <p class="dropzone-hint">Podés subir múltiples imágenes a la vez (PNG, JPG)</p>
+          <input type="file" id="fileInput" accept="image/*" multiple hidden />
+        </div>
+      </div>
+
+      <!-- Preview de imágenes -->
+      <div class="card" id="preview-card" style="display:none">
+        <div class="card-header-row">
+          <h2 class="card-title">Imágenes seleccionadas <span class="badge" id="img-count">0</span></h2>
+          <button class="btn btn-ghost" id="btn-clear">Limpiar</button>
+        </div>
+        <div class="preview-grid" id="preview-grid"></div>
+        <div class="apodo-row">
+          <label class="apodo-label" for="apodo-input">👤 Apodo del jugador (opcional):</label>
+          <input type="text" id="apodo-input" class="apodo-input" placeholder="Ej: El Faraon, nikileo527, santisanchez..." />
+          <span class="apodo-hint">Si no se ingresa, se intenta detectar automáticamente</span>
+        </div>
+        <div class="action-row">
+          <button class="btn btn-primary btn-lg" id="btn-process">
+            <span class="btn-icon">🔍</span> Procesar imágenes
+          </button>
+        </div>
+      </div>
+
+      <!-- Resultados -->
+      <div class="card" id="results-card" style="display:none">
+        <div class="card-header-row">
+          <h2 class="card-title">Resultados del procesamiento</h2>
+          <div class="results-meta" id="results-meta"></div>
+        </div>
+
+        <div id="results-list"></div>
+
+        <div class="action-row" id="save-row" style="display:none">
+          <button class="btn btn-success btn-lg" id="btn-save">
+            <span class="btn-icon">💾</span> Guardar en base de datos
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ======== TAB: HISTORY ======== -->
+    <section class="tab" id="tab-history">
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">Historial de partidos</h2>
+          <button class="btn btn-ghost" id="btn-refresh">↺ Actualizar</button>
+        </div>
+        <div id="history-container">
+          <div class="empty-state">
+            <span class="empty-icon">📊</span>
+            <p>No hay datos guardados todavía.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast notifications -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Loading overlay -->
+  <div class="overlay" id="overlay" style="display:none">
+    <div class="overlay-box">
+      <div class="spinner"></div>
+      <p class="overlay-text" id="overlay-text">Procesando imágenes...</p>
+      <p class="overlay-sub" id="overlay-sub">Esto puede tardar unos segundos por imagen</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
