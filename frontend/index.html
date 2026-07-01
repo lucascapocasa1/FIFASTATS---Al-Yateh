@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FIFA Clubes Pro — Stats</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header class="header">
@@ -14,9 +15,12 @@
         <span>FIFA Clubes Pro <span class="logo-sub">Stats</span></span>
       </div>
       <nav class="nav-tabs">
-        <button class="nav-btn active" data-tab="upload">Subir Imágenes</button>
+        <button class="nav-btn active" data-tab="upload">Subir</button>
+        <button class="nav-btn" data-tab="dashboard">Dashboard</button>
+        <button class="nav-btn" data-tab="ranking">Ranking</button>
         <button class="nav-btn" data-tab="history">Historial</button>
       </nav>
+      <button id="theme-toggle" class="theme-btn" title="Cambiar tema">☀️</button>
     </div>
   </header>
 
@@ -25,7 +29,6 @@
     <!-- ======== TAB: UPLOAD ======== -->
     <section class="tab active" id="tab-upload">
 
-      <!-- Drop Zone -->
       <div class="card">
         <h2 class="card-title">Subir capturas de rendimiento</h2>
         <div class="dropzone" id="dropzone">
@@ -36,7 +39,6 @@
         </div>
       </div>
 
-      <!-- Preview de imágenes -->
       <div class="card" id="preview-card" style="display:none">
         <div class="card-header-row">
           <h2 class="card-title">Imágenes seleccionadas <span class="badge" id="img-count">0</span></h2>
@@ -44,9 +46,10 @@
         </div>
         <div class="preview-grid" id="preview-grid"></div>
         <div class="apodo-row">
-          <label class="apodo-label" for="apodo-input">👤 Apodo del jugador (opcional):</label>
-          <input type="text" id="apodo-input" class="apodo-input" placeholder="Ej: El Faraon, nikileo527, santisanchez..." />
-          <span class="apodo-hint">Si no se ingresa, se intenta detectar automáticamente</span>
+          <label class="apodo-label" for="apodo-input">👤 Apodo del jugador:</label>
+          <input type="text" id="apodo-input" class="apodo-input" placeholder="Ej: El Faraon, nikileo527, santisanchez..." list="player-datalist" />
+          <datalist id="player-datalist"></datalist>
+          <span class="apodo-hint">Obligatorio — no se extrae nombre automáticamente de la imagen</span>
         </div>
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btn-process">
@@ -55,7 +58,6 @@
         </div>
       </div>
 
-      <!-- Resultados -->
       <div class="card" id="results-card" style="display:none">
         <div class="card-header-row">
           <h2 class="card-title">Resultados del procesamiento</h2>
@@ -71,6 +73,71 @@
         </div>
       </div>
 
+    </section>
+
+    <!-- ======== TAB: DASHBOARD ======== -->
+    <section class="tab" id="tab-dashboard">
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">📈 Evolución de estadísticas</h2>
+        </div>
+        <div class="dash-controls">
+          <div class="dash-control-group">
+            <label for="dash-player" class="dash-label">Jugador:</label>
+            <select id="dash-player" class="dash-select">
+              <option value="">-- Seleccionar --</option>
+            </select>
+          </div>
+          <div class="dash-control-group">
+            <label for="dash-stat" class="dash-label">Estadística:</label>
+            <select id="dash-stat" class="dash-select">
+              <option value="valoracion">Valoración</option>
+              <option value="goles">Goles</option>
+              <option value="asistencias">Asistencias</option>
+              <option value="goles+asistencias">G+A</option>
+              <option value="pases">Pases</option>
+              <option value="precision_pases">Precisión pases %</option>
+              <option value="tiros">Tiros</option>
+              <option value="precision_tiros">Precisión tiros %</option>
+              <option value="regates">Regates</option>
+              <option value="exito_regates">Éxito regates %</option>
+              <option value="entradas">Entradas</option>
+              <option value="exito_entradas">Éxito entradas %</option>
+              <option value="minutos_jugados">Minutos</option>
+              <option value="distancia_recorrida_km">Dist. recorrida</option>
+              <option value="distancia_sprint_km">Dist. sprint</option>
+            </select>
+          </div>
+        </div>
+        <div id="dash-chart-wrapper">
+          <canvas id="dash-chart"></canvas>
+        </div>
+        <div id="dash-empty" class="empty-state">
+          <span class="empty-icon">📊</span>
+          <p>Seleccioná un jugador para ver su evolución</p>
+        </div>
+      </div>
+
+      <div class="card" id="dash-summary-card" style="display:none">
+        <h2 class="card-title">📊 Resumen de <span id="dash-summary-player"></span></h2>
+        <div class="summary-grid" id="dash-summary"></div>
+      </div>
+    </section>
+
+    <!-- ======== TAB: RANKING ======== -->
+    <section class="tab" id="tab-ranking">
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">🏆 Ranking de jugadores</h2>
+          <button class="btn btn-ghost" id="btn-rank-refresh">↺ Actualizar</button>
+        </div>
+        <div id="ranking-container">
+          <div class="empty-state">
+            <span class="empty-icon">🏆</span>
+            <p>Cargando ranking...</p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ======== TAB: HISTORY ======== -->
@@ -91,10 +158,8 @@
 
   </main>
 
-  <!-- Toast notifications -->
   <div class="toast-container" id="toast-container"></div>
 
-  <!-- Loading overlay -->
   <div class="overlay" id="overlay" style="display:none">
     <div class="overlay-box">
       <div class="spinner"></div>

@@ -32,10 +32,12 @@ async function cropStatsPanel(inputBuffer) {
       height: cropHeight
     })
     // Escalar para mejorar OCR (Tesseract funciona mejor con imágenes más grandes)
-    .resize({ width: cropWidth * 2, height: cropHeight * 2, fit: 'fill' })
+    .resize({ width: cropWidth * 3, height: cropHeight * 3, fit: 'fill' })
     // Mejorar contraste para texto claro sobre fondo oscuro
     .greyscale()
     .normalise()
+    .linear(1.5, -30)
+    .threshold()
     .sharpen()
     .toBuffer();
 

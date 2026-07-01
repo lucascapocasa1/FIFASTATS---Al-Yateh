@@ -36,6 +36,9 @@ app.listen(PORT, () => {
   console.log(`   POST http://localhost:${PORT}/api/upload`);
   console.log(`   POST http://localhost:${PORT}/api/save`);
   console.log(`   GET  http://localhost:${PORT}/api/stats`);
+  console.log(`   GET  http://localhost:${PORT}/api/stats/player/:name`);
+  console.log(`   GET  http://localhost:${PORT}/api/leaderboard`);
+  console.log(`   GET  http://localhost:${PORT}/api/players`);
   console.log(`   DELETE http://localhost:${PORT}/api/stats/:id`);
   console.log(`   GET  http://localhost:${PORT}/api/health\n`);
 });

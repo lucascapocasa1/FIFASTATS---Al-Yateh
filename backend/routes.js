@@ -5,7 +5,7 @@ const router = express.Router();
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
-const { insertStats, getAllStats, deleteStats } = require('./db');
+const { insertStats, getAllStats, deleteStats, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
 
 // Multer: memoria (no guardar en disco)
 const upload = multer({
@@ -43,17 +43,19 @@ router.post('/upload', upload.array('images', 30), async (req, res) => {
       const imageBuffer = file.buffer;
 
       let playerName = apodo || null;
+      let nameOcrText = null;
 
-      if (!playerName) {
-        // 1. Recortar panel de nombre del jugador (parte superior)
-        const nameBuffer = await cropPlayerName(imageBuffer);
-        const nameOcrText = await runOCR(nameBuffer);
-        playerName = extractSelectedPlayer(nameOcrText);
+      // 1. Recortar panel de nombre del jugador (parte superior)
+      // Siempre se procesa porque también contiene la valoración
+      const nameBuffer = await cropPlayerName(imageBuffer);
+      nameOcrText = await runOCR(nameBuffer);
 
-        // DEBUG: guardar texto OCR para troubleshooting
-        result.ocr_debug = result.ocr_debug || {};
-        result.ocr_debug.name_text = nameOcrText.substring(0, 300);
-      }
+      // NO extraer nombre automáticamente de la imagen — solo usar el apodo ingresado
+      // para evitar que agarre nombres reales (ej: "Facundo") en vez del gamertag
+
+      // DEBUG: guardar texto OCR para troubleshooting
+      result.ocr_debug = result.ocr_debug || {};
+      result.ocr_debug.name_text = nameOcrText.substring(0, 300);
 
       // 2. Recortar panel derecho de estadísticas
       const statsBuffer = await cropStatsPanel(imageBuffer);
@@ -63,8 +65,8 @@ router.post('/upload', upload.array('images', 30), async (req, res) => {
       result.ocr_debug = result.ocr_debug || {};
       result.ocr_debug.stats_text = statsOcrText.substring(0, 800);
 
-      // 3. Parsear estadísticas
-      const stats = parseStats(statsOcrText, playerName);
+      // 3. Parsear estadísticas (pasar nameOcrText como respaldo para la valoración)
+      const stats = parseStats(statsOcrText, playerName, nameOcrText);
 
       // 4. Validar
       const validation = validateStats(stats);
@@ -151,6 +153,45 @@ router.delete('/stats/:id', async (req, res) => {
   try {
     await deleteStats(parseInt(req.params.id));
     res.json({ success: true, deleted: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /stats/player/:name
+ * Retorna todas las estadísticas de un jugador específico, ordenadas por fecha ASC.
+ */
+router.get('/stats/player/:name', async (req, res) => {
+  try {
+    const stats = await getStatsByPlayer(req.params.name);
+    res.json({ total: stats.length, data: stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /leaderboard
+ * Retorna promedios agregados por jugador para el ranking.
+ */
+router.get('/leaderboard', async (req, res) => {
+  try {
+    const board = await getLeaderboard();
+    res.json({ data: board });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /players
+ * Retorna la lista de nombres de jugadores distintos.
+ */
+router.get('/players', async (req, res) => {
+  try {
+    const players = await getAllPlayers();
+    res.json({ data: players });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

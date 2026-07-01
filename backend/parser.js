@@ -128,15 +128,94 @@ function findStat(lines, keywords) {
 }
 
 /**
- * Extrae la calificación/valoración del texto.
+ * Extrae la calificación/valoración del texto del panel de estadísticas.
  * Aparece como número con decimal tipo "8.4" o "7.6"
+ * También corrige confusiones comunes del OCR (6↔9, .↔,)
  */
 function extractValoracion(text) {
-  // Buscar patrones como "6.8", "8.4", "7.6" que sean calificaciones
-  const matches = text.match(/\b([5-9]\.\d|10\.0)\b/g);
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // 1. Buscar en líneas con palabras clave de calificación
+  const ratingKeywords = ['calificación', 'calificacion', 'calif', 'cr', 'rating', 'valoración', 'valoracion', 'cal'];
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (ratingKeywords.some(kw => lower.includes(kw))) {
+      const nums = line.match(/\b(\d\.\d)\b/g);
+      if (nums && nums.length > 0) {
+        // El primer decimal en la línea suele ser la valoración del jugador
+        const firstVal = parseFloat(nums[0]);
+        if (firstVal >= 1.0 && firstVal <= 10.0) {
+          // Si es ≥ 9.0 y hay un segundo valor que es el mismo con 6↔9, preferir el segundo
+          if (firstVal >= 9.0 && nums.length >= 2) {
+            const secondVal = parseFloat(nums[1]);
+            if (secondVal >= 1.0 && secondVal <= 10.0) {
+              const firstStr = firstVal.toFixed(1);
+              const secondStr = secondVal.toFixed(1);
+              if (firstStr.replace('9', '6') === secondStr || firstStr.replace('6', '9') === secondStr) {
+                return secondVal;
+              }
+            }
+          }
+          return firstVal;
+        }
+      }
+    }
+  }
+
+  // 2. Fallback: buscar cualquier decimal en todo el texto
+  const matches = text.match(/\b(\d\.\d)\b/g);
   if (matches && matches.length > 0) {
-    // Tomar la primera (suele ser la del jugador seleccionado)
-    return parseFloat(matches[0]);
+    const ratings = matches
+      .map(m => parseFloat(m))
+      .filter(v => v >= 1.0 && v <= 10.0)
+      .sort((a, b) => b - a);
+    if (ratings.length > 0) {
+      // Si el valor más alto es ≥ 9.0, verificar si confunde 6 con 9
+      if (ratings[0] >= 9.0 && ratings.length >= 2) {
+        const highStr = ratings[0].toFixed(1);
+        for (let i = 1; i < ratings.length; i++) {
+          const lowStr = ratings[i].toFixed(1);
+          // Si intercambiar 9↔6 en el valor alto da el valor bajo, preferir el bajo
+          if (highStr.replace('9', '6') === lowStr || highStr.replace('6', '9') === lowStr) {
+            return ratings[i];
+          }
+        }
+      }
+      return ratings[0];
+    }
+  }
+
+  // 3. Fallback: buscar decimales con coma (OCR a veces confunde . con ,)
+  const matchesComma = text.match(/\b(\d,\d)\b/g);
+  if (matchesComma && matchesComma.length > 0) {
+    for (const m of matchesComma) {
+      const val = parseFloat(m.replace(',', '.'));
+      if (val >= 1.0 && val <= 10.0) return val;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extrae la calificación/valoración del texto del panel del nombre.
+ * En el panel del nombre la valoración aparece al final de la línea
+ * junto al nombre del jugador (ej: "mci lucasyjoaqui 6.9")
+ */
+function extractValoracionFromName(nameOcrText) {
+  const lines = nameOcrText.split('\n').map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    // Buscar un decimal al final de la línea que sea una valoración
+    const match = line.match(/(\d\.\d)\s*$/);
+    if (match) {
+      const val = parseFloat(match[1]);
+      if (val >= 1.0 && val <= 10.0) return val;
+    }
+    // También buscar decimal en cualquier posición si hay pocos números en la línea
+    const allNums = line.match(/\b(\d\.\d)\b/g);
+    if (allNums && allNums.length === 1) {
+      const val = parseFloat(allNums[0]);
+      if (val >= 1.0 && val <= 10.0) return val;
+    }
   }
   return null;
 }
@@ -144,7 +223,7 @@ function extractValoracion(text) {
 /**
  * Parser principal: recibe texto OCR del panel de stats y devuelve objeto JSON
  */
-function parseStats(statsOcrText, playerName = null) {
+function parseStats(statsOcrText, playerName = null, nameOcrText = null) {
   const lines = statsOcrText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
   const result = {
@@ -169,8 +248,26 @@ function parseStats(statsOcrText, playerName = null) {
     valoracion: null
   };
 
-  // Extraer valoración del texto completo
-  result.valoracion = extractValoracion(statsOcrText);
+  // Extraer valoración - el panel del nombre tiene 3x upscale, mejor resolución para dígitos
+  let valFromName = nameOcrText ? extractValoracionFromName(nameOcrText) : null;
+  let valFromStats = extractValoracion(statsOcrText);
+
+  // Priorizar el panel del nombre (mejor resolución). Solo usar stats si name falla.
+  if (valFromName !== null) {
+    result.valoracion = valFromName;
+    // Si ambos dan resultado y el de stats es más bajo (p.ej. 6.9 vs 9.9 en name),
+    // posiblemente OCR confundió 6 con 9 en el name panel → preferir el de stats
+    if (valFromStats !== null && valFromStats < valFromName) {
+      const nameStr = valFromName.toFixed(1);
+      const statsStr = valFromStats.toFixed(1);
+      // Verificar si el valor de name se obtiene cambiando un 9 por 6 en stats
+      if (nameStr.replace('9', '6') === statsStr || nameStr.replace('6', '9') === statsStr) {
+        result.valoracion = valFromStats;
+      }
+    }
+  } else if (valFromStats !== null) {
+    result.valoracion = valFromStats;
+  }
 
   // Mapeo de campos a keywords para buscar en las líneas
   const mappings = [
@@ -247,4 +344,4 @@ function validateStats(stats) {
   };
 }
 
-module.exports = { parseStats, extractSelectedPlayer, extractPlayerName, validateStats };
+module.exports = { parseStats, extractSelectedPlayer, extractPlayerName, validateStats, extractValoracion };

@@ -339,6 +339,153 @@ body {
 .toast.error   { border-left: 3px solid var(--red); }
 .toast.info    { border-left: 3px solid var(--accent); }
 
+/* ── Theme Toggle ── */
+.theme-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.theme-btn:hover {
+  border-color: var(--text-muted);
+  background: var(--bg);
+}
+
+/* ── Dashboard ── */
+.dash-controls {
+  display: flex;
+  gap: 16px;
+  padding: 16px 0;
+  flex-wrap: wrap;
+}
+.dash-control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dash-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.dash-select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  min-width: 180px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.dash-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0,195,255,0.15);
+}
+#dash-chart-wrapper {
+  position: relative;
+  min-height: 300px;
+  margin-top: 8px;
+}
+#dash-chart-wrapper canvas {
+  width: 100% !important;
+  height: 300px !important;
+}
+
+/* ── Summary Grid ── */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.summary-item {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  text-align: center;
+}
+.summary-item .summary-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.summary-item .summary-value.highlight {
+  color: var(--accent);
+}
+.summary-item .summary-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+/* ── Ranking ── */
+.rank-medal {
+  font-size: 16px;
+  min-width: 24px;
+  text-align: center;
+}
+.rank-number {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  min-width: 24px;
+  text-align: center;
+}
+.rank-player {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+.rank-bar-cell {
+  min-width: 100px;
+}
+.rank-bar-bg {
+  background: var(--bg3);
+  border-radius: 10px;
+  height: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+.rank-bar-fill {
+  height: 100%;
+  border-radius: 10px;
+  transition: width 0.4s ease;
+}
+.rank-bar-fill.gold { background: linear-gradient(90deg, #ffd700, #ffaa00); }
+.rank-bar-fill.silver { background: linear-gradient(90deg, #c0c0c0, #a0a0a0); }
+.rank-bar-fill.bronze { background: linear-gradient(90deg, #cd7f32, #b8860b); }
+.rank-bar-fill.normal { background: var(--accent); }
+
+/* ── Light Theme ── */
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --bg2: #ffffff;
+  --bg3: #e8eaef;
+  --border: #d0d4dc;
+  --accent: #0087d4;
+  --accent2: #00a8e0;
+  --text: #1a1d27;
+  --text-muted: #6b7280;
+  --text-dim: #9ca3af;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
@@ -351,6 +498,16 @@ body {
   .main { padding: 16px 14px 40px; }
   .card { padding: 16px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .btn-lg { padding: 10px 18px; font-size: 14px; }
   .history-table { font-size: 12px; }
+  .dash-controls { flex-direction: column; gap: 10px; }
+  .dash-select { min-width: 100%; }
+  .dash-control-group { flex-direction: column; align-items: stretch; }
+  #dash-chart-wrapper { min-height: 220px; }
+  #dash-chart-wrapper canvas { height: 220px !important; }
+  .rank-bar-cell { display: none; }
+  .nav-btn { padding: 6px 10px; font-size: 12px; }
+  .logo { font-size: 15px; }
+  .theme-btn { width: 32px; height: 32px; font-size: 14px; }
 }
