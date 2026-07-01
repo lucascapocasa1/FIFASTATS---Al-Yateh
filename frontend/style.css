@@ -236,6 +236,17 @@ body {
 .stat-value { font-size: 20px; font-weight: 700; color: var(--text); margin-top: 2px; }
 .stat-value.null-val { color: var(--text-dim); font-size: 14px; }
 
+.stat-input {
+  width: 100%; padding: 6px 8px; margin-top: 4px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); font-size: 16px; font-weight: 600;
+  outline: none; transition: border var(--transition);
+}
+.stat-input:focus { border-color: var(--accent); }
+.stat-input::placeholder { color: var(--text-dim); font-weight: 400; font-size: 14px; }
+.stat-input.null-val { color: var(--text-dim); font-weight: 400; font-style: italic; }
+.player-name-cell { grid-column: 1 / -1; }
+
 .error-list { list-style: none; padding: 0; }
 .error-list li {
   color: var(--red); font-size: 13px; padding: 6px 0;

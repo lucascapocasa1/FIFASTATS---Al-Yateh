@@ -248,7 +248,7 @@ function renderResults(data) {
         <span class="result-arrow">▾</span>
       </div>
       <div class="result-body">
-        ${renderResultBody(result)}
+        ${renderResultBody(result, idx)}
       </div>
     `;
     list.appendChild(div);
@@ -263,10 +263,24 @@ function renderResults(data) {
     saveRow.style.display = 'flex';
   }
 
+  // Event delegation para inputs editables
+  list.addEventListener('change', handleStatInputChange);
+
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function renderResultBody(result) {
+function handleStatInputChange(e) {
+  const input = e.target;
+  if (!input.dataset.resultIdx || !input.dataset.stat) return;
+  const idx = parseInt(input.dataset.resultIdx);
+  const stat = input.dataset.stat;
+  const val = input.type === 'number' ? (input.value === '' ? null : parseFloat(input.value)) : input.value;
+  if (state.results[idx] && state.results[idx].data) {
+    state.results[idx].data[stat] = val;
+  }
+}
+
+function renderResultBody(result, idx) {
   if (!result.success) {
     return `
       <ul class="error-list">
@@ -282,35 +296,48 @@ function renderResultBody(result) {
     html += `<div class="warning-box">⚠ ${result.warnings.join(' | ')}</div>`;
   }
 
+  // Player name editable
+  html += `
+    <div class="stat-cell player-name-cell">
+      <div class="stat-label">👤 Jugador</div>
+      <input type="text" class="stat-input" value="${d.jugador || ''}"
+        data-result-idx="${idx}" data-stat="jugador" />
+    </div>
+  `;
+
   const statsConfig = [
-    { key: 'goles',                label: 'Goles',                 emoji: '⚽' },
-    { key: 'asistencias',          label: 'Asistencias',           emoji: '🎯' },
-    { key: 'valoracion',           label: 'Valoración',            emoji: '⭐' },
-    { key: 'tiros',                label: 'Tiros',                 emoji: '🏃' },
-    { key: 'precision_tiros',      label: 'Precisión tiros %',     emoji: '🎯' },
-    { key: 'pases',                label: 'Pases',                 emoji: '↗' },
-    { key: 'precision_pases',      label: 'Precisión pases %',     emoji: '✅' },
-    { key: 'regates',              label: 'Regates',               emoji: '💫' },
-    { key: 'exito_regates',        label: 'Éxito regates %',       emoji: '🔥' },
-    { key: 'entradas',             label: 'Entradas',              emoji: '🛡' },
-    { key: 'exito_entradas',       label: 'Éxito entradas %',      emoji: '✔' },
-    { key: 'fueras_de_juego',      label: 'Fueras de lugar',       emoji: '🚩' },
-    { key: 'faltas',               label: 'Faltas',                emoji: '❌' },
-    { key: 'posesion_ganada',      label: 'Posesión ganada',       emoji: '🟢' },
-    { key: 'posesion_perdida',     label: 'Posesión perdida',      emoji: '🔴' },
-    { key: 'minutos_jugados',      label: 'Minutos',               emoji: '⏱' },
-    { key: 'distancia_recorrida_km', label: 'Dist. recorrida km',  emoji: '📏' },
-    { key: 'distancia_sprint_km',  label: 'Dist. sprint km',       emoji: '⚡' },
+    { key: 'goles',                label: 'Goles',                 emoji: '⚽', step: 1 },
+    { key: 'asistencias',          label: 'Asistencias',           emoji: '🎯', step: 1 },
+    { key: 'valoracion',           label: 'Valoración',            emoji: '⭐', step: 0.1 },
+    { key: 'tiros',                label: 'Tiros',                 emoji: '🏃', step: 1 },
+    { key: 'precision_tiros',      label: 'Precisión tiros %',     emoji: '🎯', step: 1 },
+    { key: 'pases',                label: 'Pases',                 emoji: '↗', step: 1 },
+    { key: 'precision_pases',      label: 'Precisión pases %',     emoji: '✅', step: 1 },
+    { key: 'regates',              label: 'Regates',               emoji: '💫', step: 1 },
+    { key: 'exito_regates',        label: 'Éxito regates %',       emoji: '🔥', step: 1 },
+    { key: 'entradas',             label: 'Entradas',              emoji: '🛡', step: 1 },
+    { key: 'exito_entradas',       label: 'Éxito entradas %',      emoji: '✔', step: 1 },
+    { key: 'fueras_de_juego',      label: 'Fueras de lugar',       emoji: '🚩', step: 1 },
+    { key: 'faltas',               label: 'Faltas',                emoji: '❌', step: 1 },
+    { key: 'posesion_ganada',      label: 'Posesión ganada',       emoji: '🟢', step: 1 },
+    { key: 'posesion_perdida',     label: 'Posesión perdida',      emoji: '🔴', step: 1 },
+    { key: 'minutos_jugados',      label: 'Minutos',               emoji: '⏱', step: 1 },
+    { key: 'distancia_recorrida_km', label: 'Dist. recorrida km',  emoji: '📏', step: 0.1 },
+    { key: 'distancia_sprint_km',  label: 'Dist. sprint km',       emoji: '⚡', step: 0.1 },
   ];
 
   html += '<div class="stats-grid">';
   for (const s of statsConfig) {
     const val = d[s.key];
     const isNull = val === null || val === undefined;
+    const inputVal = isNull ? '' : val;
     html += `
       <div class="stat-cell">
         <div class="stat-label">${s.emoji} ${s.label}</div>
-        <div class="stat-value ${isNull ? 'null-val' : ''}">${isNull ? '—' : val}</div>
+        <input type="number" class="stat-input ${isNull ? 'null-val' : ''}"
+          step="${s.step}" min="0" max="${s.key === 'valoracion' ? 10 : 99999}"
+          value="${inputVal}" placeholder="—"
+          data-result-idx="${idx}" data-stat="${s.key}" />
       </div>
     `;
   }

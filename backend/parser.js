@@ -97,12 +97,13 @@ function extractSelectedPlayer(nameOcrText) {
  * Previamente normaliza OCR misreads: 0 → O/o, o), Lo), oO
  */
 function extractFirstNumber(str) {
-  // OCR confunde 0 con O/o (común en FIFA stats cuando el jugador tiene 0)
+  // OCR confunde 0 con O/o y E (común en FIFA stats cuando el jugador tiene 0)
   const normalized = str
     .replace(/[Oo]\)/g, '0')
     .replace(/Lo\)/g, '0')
     .replace(/[Oo]O/g, '0')
-    .replace(/\b[Oo]\b/g, '0');
+    .replace(/\b[Oo]\b/g, '0')
+    .replace(/\b[Ee]\b/g, '0');
 
   // Usar regex que no matchee puntos sueltos (ej: "Asist."), solo números enteros o decimales
   const numbers = normalized.match(/\d+(?:\.\d+)?/g);
@@ -204,17 +205,31 @@ function extractValoracion(text) {
 function extractValoracionFromName(nameOcrText) {
   const lines = nameOcrText.split('\n').map(l => l.trim()).filter(Boolean);
   for (const line of lines) {
-    // Buscar un decimal al final de la línea que sea una valoración
+    // 1. Buscar un decimal al final de la línea que sea una valoración
     const match = line.match(/(\d\.\d)\s*$/);
     if (match) {
       const val = parseFloat(match[1]);
       if (val >= 1.0 && val <= 10.0) return val;
     }
-    // También buscar decimal en cualquier posición si hay pocos números en la línea
+    // 2. Buscar decimal en cualquier posición si hay pocos números en la línea
     const allNums = line.match(/\b(\d\.\d)\b/g);
     if (allNums && allNums.length === 1) {
       const val = parseFloat(allNums[0]);
       if (val >= 1.0 && val <= 10.0) return val;
+    }
+    // 3. Buscar valoración entre paréntesis, ej: "(7)" o "(6.8)"
+    const parenMatch = line.match(/\((\d+(?:\.\d+)?)\)/);
+    if (parenMatch) {
+      const val = parseFloat(parenMatch[1]);
+      if (val >= 1.0 && val <= 10.0) return val;
+    }
+    // 4. Fallback: entero 1-10 como posible valoración (OCR omitió el decimal)
+    const intNums = line.match(/\b(\d+)\b/g);
+    if (intNums) {
+      for (const n of intNums) {
+        const val = parseInt(n, 10);
+        if (val >= 1 && val <= 10) return val;
+      }
     }
   }
   return null;
