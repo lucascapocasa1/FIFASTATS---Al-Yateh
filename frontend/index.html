@@ -45,11 +45,10 @@
           <button class="btn btn-ghost" id="btn-clear">Limpiar</button>
         </div>
         <div class="preview-grid" id="preview-grid"></div>
-        <div class="apodo-row">
-          <label class="apodo-label" for="apodo-input">👤 Apodo del jugador:</label>
-          <input type="text" id="apodo-input" class="apodo-input" placeholder="Ej: El Faraon, nikileo527, santisanchez..." list="player-datalist" />
-          <datalist id="player-datalist"></datalist>
-          <span class="apodo-hint">Obligatorio — no se extrae nombre automáticamente de la imagen</span>
+        <div class="match-form">
+          <input type="text" id="match-rival" class="match-input" placeholder="Rival (ej: vs SUB21)" />
+          <input type="text" id="match-desc" class="match-input" placeholder="Descripción (ej: Fecha 1 - 2da Division)" />
+          <input type="date" id="match-fecha" class="match-input match-date" />
         </div>
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btn-process">
@@ -66,9 +65,9 @@
 
         <div id="results-list"></div>
 
-        <div class="action-row" id="save-row" style="display:none">
-          <button class="btn btn-success btn-lg" id="btn-save">
-            <span class="btn-icon">💾</span> Guardar en base de datos
+        <div class="action-row" id="save-all-row" style="display:none">
+          <button class="btn btn-success btn-lg" id="btn-save-all">
+            <span class="btn-icon">💾</span> Guardar todos los jugadores
           </button>
         </div>
       </div>

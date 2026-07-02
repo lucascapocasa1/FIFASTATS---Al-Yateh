@@ -3,7 +3,8 @@ const API_URL = 'http://localhost:3001/api';
 const state = {
   files: [],
   results: [],
-  history: []
+  history: [],
+  processing: false
 };
 
 let dashChart = null;
@@ -18,9 +19,13 @@ document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initDashboard();
   initRanking();
-  loadHistory();
-  loadPlayerDatalist();
+  loadMatchHistory();
+  setDefaultDate();
 });
+
+function setDefaultDate() {
+  document.getElementById('match-fecha').value = new Date().toISOString().split('T')[0];
+}
 
 // ── Tabs ──
 function initTabs() {
@@ -31,9 +36,8 @@ function initTabs() {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(`tab-${tab}`).classList.add('active');
-      if (tab === 'history') loadHistory();
+      if (tab === 'history') loadMatchHistory();
       if (tab === 'dashboard') {
-        loadDashboardPlayers();
         const sel = document.getElementById('dash-player');
         if (sel.value) loadDashboardPlayerStats(sel.value);
       }
@@ -64,9 +68,7 @@ function toggleTheme() {
     btn.textContent = '🌙';
     localStorage.setItem('fifa-theme', 'light');
   }
-  if (dashChart) {
-    updateChartColors();
-  }
+  if (dashChart) updateChartColors();
 }
 
 function updateChartColors() {
@@ -106,6 +108,14 @@ function initDropzone() {
 }
 
 function addFiles(newFiles) {
+  console.log('[addFiles] Llamado con', newFiles.length, 'archivos, type:', newFiles[0]?.type);
+
+  // Si está procesando, ignorar (evita que se borren los resultados)
+  if (state.processing) {
+    console.log('[addFiles] BLOQUEADO: state.processing = true');
+    return;
+  }
+
   const imageFiles = newFiles.filter(f => f.type.startsWith('image/'));
   if (!imageFiles.length) { toast('Solo se aceptan imágenes', 'error'); return; }
 
@@ -113,8 +123,10 @@ function addFiles(newFiles) {
   renderPreviews();
 
   document.getElementById('results-card').style.display = 'none';
-  document.getElementById('save-row').style.display = 'none';
+  document.getElementById('save-all-row').style.display = 'none';
   state.results = [];
+  state._matchId = null;
+  console.log('[addFiles] Resultados limpiados, results-card ocultado');
 }
 
 function renderPreviews() {
@@ -158,44 +170,42 @@ function initButtons() {
   document.getElementById('btn-clear').addEventListener('click', () => {
     state.files = [];
     state.results = [];
+    state._matchId = null;
     renderPreviews();
     document.getElementById('results-card').style.display = 'none';
   });
 
   document.getElementById('btn-process').addEventListener('click', processImages);
-  document.getElementById('btn-save').addEventListener('click', saveResults);
-  document.getElementById('btn-refresh').addEventListener('click', loadHistory);
+  document.getElementById('btn-save-all').addEventListener('click', saveAllPlayers);
+  document.getElementById('btn-refresh').addEventListener('click', loadMatchHistory);
   document.getElementById('btn-rank-refresh').addEventListener('click', loadRanking);
-}
-
-// ── Player Datalist (autocomplete en apodo) ──
-async function loadPlayerDatalist() {
-  try {
-    const res = await fetch(`${API_URL}/players`);
-    const data = await res.json();
-    if (data.data && data.data.length) {
-      const dl = document.getElementById('player-datalist');
-      dl.innerHTML = data.data.map(p => `<option value="${p}">`).join('');
-    }
-  } catch (e) {
-    // Silencioso — no crítico
-  }
 }
 
 // ── Process Images ──
 async function processImages() {
   if (!state.files.length) { toast('Seleccioná al menos una imagen', 'error'); return; }
+  console.log('[processImages] Iniciando con', state.files.length, 'archivos');
 
-  const apodo = document.getElementById('apodo-input').value.trim();
-  if (!apodo) { toast('Ingresá el apodo del jugador', 'error'); return; }
+  if (!document.getElementById('match-rival').value.trim()) {
+    toast('Ingresá el nombre del rival', 'error');
+    return;
+  }
 
+  state.processing = true;
+  state._matchId = null;
   showOverlay('Procesando imágenes con OCR...', 'Esto puede tardar unos segundos por imagen');
   document.getElementById('btn-process').disabled = true;
+
+  // Deshabilitar el drag/drop/clic para evitar re-entrada
+  const dropzone = document.getElementById('dropzone');
+  dropzone.style.pointerEvents = 'none';
+  const fileInput = document.getElementById('fileInput');
+  fileInput.disabled = true;
 
   try {
     const formData = new FormData();
     state.files.forEach(f => formData.append('images', f));
-    if (apodo) formData.append('apodo', apodo);
+    console.log('[processImages] Enviando', state.files.length, 'imágenes al servidor...');
 
     const response = await fetch(`${API_URL}/upload`, {
       method: 'POST',
@@ -209,37 +219,51 @@ async function processImages() {
 
     const data = await response.json();
     state.results = data.results;
+    console.log('[processImages] Respuesta del servidor:', { total: data.total, exitosos: data.exitosos, fallidos: data.fallidos });
+    console.log('[processImages] state.results.length =', state.results.length);
+    data.results.forEach((r, i) => {
+      console.log(`[processImages] Resultado #${i}:`, r.filename, 'success:', r.success, 'jugador:', r.data?.jugador);
+    });
+
+    console.log('[processImages] Llamando a renderResults...');
     renderResults(data);
+    console.log('[processImages] renderResults completado');
 
   } catch (err) {
     console.error(err);
     toast(`Error: ${err.message}`, 'error');
   } finally {
+    state.processing = false;
     hideOverlay();
     document.getElementById('btn-process').disabled = false;
+    document.getElementById('dropzone').style.pointerEvents = '';
+    document.getElementById('fileInput').disabled = false;
   }
 }
 
 // ── Render Results ──
 function renderResults(data) {
+  console.log('[renderResults] Iniciando render, results.length =', data.results?.length);
   const card = document.getElementById('results-card');
   const list = document.getElementById('results-list');
   const meta = document.getElementById('results-meta');
-  const saveRow = document.getElementById('save-row');
+
+  if (!card) { console.error('[renderResults] #results-card NO EXISTE en el DOM'); return; }
+  if (!list) { console.error('[renderResults] #results-list NO EXISTE en el DOM'); return; }
 
   card.style.display = 'block';
   meta.textContent = `${data.exitosos} exitosos / ${data.fallidos} fallidos de ${data.total}`;
 
   list.innerHTML = '';
+  console.log('[renderResults] Card visible, list vaciado');
 
   data.results.forEach((result, idx) => {
     const hasData = result.success && result.data;
     const hasWarnings = result.warnings && result.warnings.length > 0;
-
     const statusClass = !result.success ? 'error' : hasWarnings ? 'warning' : 'ok';
 
     const div = document.createElement('div');
-    div.className = 'result-item';
+    div.className = result.success && result.data ? 'result-item expanded' : 'result-item';
     div.innerHTML = `
       <div class="result-header" data-idx="${idx}">
         <span class="result-status ${statusClass}"></span>
@@ -251,6 +275,7 @@ function renderResults(data) {
         ${renderResultBody(result, idx)}
       </div>
     `;
+    console.log('[renderResults] Append child #' + idx + ':', result.filename);
     list.appendChild(div);
 
     div.querySelector('.result-header').addEventListener('click', () => {
@@ -258,15 +283,25 @@ function renderResults(data) {
     });
   });
 
+  console.log('[renderResults] Elementos agregados al DOM:', list.children.length);
+
+  // Event delegation para inputs editables y botones guardar
+  list.addEventListener('change', handleStatInputChange);
+  list.addEventListener('click', e => {
+    const btn = e.target.closest('.player-save-btn');
+    if (btn && !btn.classList.contains('btn-saved')) {
+      const idx = parseInt(btn.dataset.resultIdx);
+      savePlayer(idx);
+    }
+  });
+
   const successfulResults = data.results.filter(r => r.success && r.data);
   if (successfulResults.length > 0) {
-    saveRow.style.display = 'flex';
+    document.getElementById('save-all-row').style.display = 'flex';
   }
 
-  // Event delegation para inputs editables
-  list.addEventListener('change', handleStatInputChange);
-
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  console.log('[renderResults] Finalizado, card visible:', card.style.display);
 }
 
 function handleStatInputChange(e) {
@@ -343,6 +378,16 @@ function renderResultBody(result, idx) {
   }
   html += '</div>';
 
+  // Save button for this player
+  const savedClass = result._saved ? 'btn-saved' : '';
+  const savedText = result._saved ? '✅ Guardado' : '💾 Guardar';
+  html += `
+    <div class="player-save-row">
+      <button class="btn btn-success player-save-btn ${savedClass}"
+        data-result-idx="${idx}">${savedText}</button>
+    </div>
+  `;
+
   if (result.ocr_debug) {
     html += `
       <div class="ocr-debug">
@@ -357,68 +402,98 @@ function renderResultBody(result, idx) {
   return html;
 }
 
-// ── Save ──
-async function saveResults() {
-  const validStats = state.results
-    .filter(r => r.success && r.data)
-    .map(r => r.data);
+// ── Save individual player ──
+async function savePlayer(idx) {
+  const result = state.results[idx];
+  if (!result || !result.data) return;
 
-  if (!validStats.length) { toast('No hay datos válidos para guardar', 'error'); return; }
+  const rival = document.getElementById('match-rival').value.trim();
+  const descripcion = document.getElementById('match-desc').value.trim();
+  const fecha = document.getElementById('match-fecha').value;
 
-  showOverlay('Guardando datos...', '');
-  document.getElementById('btn-save').disabled = true;
+  if (!rival) { toast('Falta el nombre del rival', 'error'); return; }
+  if (!fecha) { toast('Falta la fecha del partido', 'error'); return; }
+
+  showOverlay('Guardando...', result.data.jugador);
 
   try {
-    const response = await fetch(`${API_URL}/save`, {
+    // 1. Get or create match
+    let matchId = state._matchId;
+    if (!matchId) {
+      const matchRes = await fetch(`${API_URL}/match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rival, descripcion, fecha })
+      });
+      const matchData = await matchRes.json();
+      if (!matchData.success) throw new Error('Error creando partido');
+      matchId = matchData.id;
+      state._matchId = matchId;
+    }
+
+    // 2. Save player stats
+    const saveRes = await fetch(`${API_URL}/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stats: validStats })
+      body: JSON.stringify({ stats: result.data, match_id: matchId })
     });
 
-    const data = await response.json();
+    const saveData = await saveRes.json();
+    if (!saveRes.ok) throw new Error(saveData.error || 'Error guardando');
 
-    if (!response.ok) throw new Error(data.error || 'Error guardando');
+    result._saved = true;
+    result._savedId = saveData.id;
 
-    toast(`✅ ${data.saved} registro(s) guardado(s) correctamente`, 'success');
-    document.getElementById('save-row').style.display = 'none';
+    // Update button UI
+    const btn = document.querySelector(`.player-save-btn[data-result-idx="${idx}"]`);
+    if (btn) {
+      btn.textContent = '✅ Guardado';
+      btn.classList.add('btn-saved');
+    }
 
-    state.files = [];
-    state.results = [];
-    renderPreviews();
-    document.getElementById('results-card').style.display = 'none';
-    document.getElementById('preview-card').style.display = 'none';
-
-    loadPlayerDatalist();
+    toast(`✅ ${result.data.jugador} guardado`, 'success');
 
   } catch (err) {
     toast(`Error: ${err.message}`, 'error');
   } finally {
     hideOverlay();
-    document.getElementById('btn-save').disabled = false;
   }
 }
 
-// ── History ──
-async function loadHistory() {
+// ── Save all players ──
+async function saveAllPlayers() {
+  const valid = state.results.filter(r => r.success && r.data && !r._saved);
+  if (!valid.length) { toast('Todos los jugadores ya están guardados', 'info'); return; }
+
+  for (const r of valid) {
+    const idx = state.results.indexOf(r);
+    await savePlayer(idx);
+  }
+
+  toast(`✅ ${valid.length} jugador(es) guardado(s)`, 'success');
+}
+
+// ── Match History ──
+async function loadMatchHistory() {
   const container = document.getElementById('history-container');
   container.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando...</p></div>';
 
   try {
-    const response = await fetch(`${API_URL}/stats`);
+    const response = await fetch(`${API_URL}/matches`);
     const data = await response.json();
 
-    state.history = data.data || [];
+    const matches = data.data || [];
 
-    if (!state.history.length) {
+    if (!matches.length) {
       container.innerHTML = `
         <div class="empty-state">
           <span class="empty-icon">📊</span>
-          <p>No hay estadísticas guardadas todavía.</p>
+          <p>No hay partidos guardados todavía.</p>
         </div>`;
       return;
     }
 
-    renderHistory(state.history, container);
+    renderMatchHistory(matches, container);
 
   } catch (err) {
     container.innerHTML = `
@@ -430,67 +505,125 @@ async function loadHistory() {
   }
 }
 
-function renderHistory(data, container) {
-  const cols = [
-    { key: 'jugador',      label: 'Jugador' },
-    { key: 'valoracion',   label: 'Val.' },
-    { key: 'goles',        label: 'G' },
-    { key: 'asistencias',  label: 'AST' },
-    { key: 'pases',        label: 'Pases' },
-    { key: 'precision_pases', label: 'Prec.%' },
-    { key: 'tiros',        label: 'Tiros' },
-    { key: 'regates',      label: 'Reg.' },
-    { key: 'minutos_jugados', label: 'Min.' },
-    { key: 'fecha',        label: 'Fecha' },
-    { key: '_actions',     label: '' }
-  ];
+async function renderMatchHistory(matches, container) {
+  const fragment = document.createDocumentFragment();
 
-  let html = `
-    <div class="table-wrapper">
-    <table class="history-table">
-      <thead><tr>
-        ${cols.map(c => `<th>${c.label}</th>`).join('')}
-      </tr></thead>
-      <tbody>
-  `;
+  for (const match of matches) {
+    const card = document.createElement('div');
+    card.className = 'match-card';
 
-  for (const row of data) {
-    html += '<tr>';
-    for (const col of cols) {
-      if (col.key === '_actions') {
-        html += `<td><button class="btn btn-danger" onclick="deleteRow(${row.id})" title="Eliminar">✕</button></td>`;
-      } else if (col.key === 'jugador') {
-        html += `<td class="player-name">${row.jugador || '—'}</td>`;
-      } else if (col.key === 'valoracion') {
-        const v = row.valoracion;
-        const cls = v >= 7.5 ? 'high' : v >= 6 ? 'mid' : 'low';
-        html += `<td><span class="rating-badge ${cls}">${v ?? '—'}</span></td>`;
-      } else if (col.key === 'fecha') {
-        const d = row.fecha ? new Date(row.fecha).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
-        html += `<td class="date-cell">${d}</td>`;
-      } else {
-        html += `<td>${row[col.key] ?? '—'}</td>`;
+    const fecha = match.fecha ? new Date(match.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+
+    card.innerHTML = `
+      <div class="match-header" data-match-id="${match.id}">
+        <div class="match-info">
+          <span class="match-rival">🆚 ${match.rival}</span>
+          <span class="match-date">${fecha}</span>
+          ${match.descripcion ? `<span class="match-desc">${match.descripcion}</span>` : ''}
+        </div>
+        <div class="match-meta">
+          <span class="match-players">👥 ${match.jugadores} jug.</span>
+          <button class="btn btn-danger btn-sm match-delete-btn" data-match-id="${match.id}" title="Eliminar partido">✕</button>
+          <span class="result-arrow">▾</span>
+        </div>
+      </div>
+      <div class="match-body">
+        <div class="match-players-list"></div>
+      </div>
+    `;
+
+    fragment.appendChild(card);
+  }
+
+  container.innerHTML = '';
+  container.appendChild(fragment);
+
+  // Delete match buttons
+  container.querySelectorAll('.match-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const matchId = btn.dataset.matchId;
+      if (!confirm('¿Eliminar este partido y todas sus estadísticas?')) return;
+      try {
+        const res = await fetch(`${API_URL}/match/${matchId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          toast('Partido eliminado', 'info');
+          loadMatchHistory();
+        } else {
+          toast('Error eliminando: ' + (data.error || 'desconocido'), 'error');
+        }
+      } catch (err) {
+        toast('Error: ' + err.message, 'error');
       }
-    }
-    html += '</tr>';
+    });
+  });
+
+  // Load match details on click
+  container.querySelectorAll('.match-header').forEach(header => {
+    header.addEventListener('click', async () => {
+      const card = header.closest('.match-card');
+      const body = card.querySelector('.match-body');
+      const list = body.querySelector('.match-players-list');
+      const isOpen = body.style.display === 'block';
+
+      if (isOpen) {
+        body.style.display = 'none';
+        return;
+      }
+
+      if (list.children.length === 0) {
+        const matchId = header.dataset.matchId;
+        list.innerHTML = '<div class="empty-state"><p>Cargando...</p></div>';
+        body.style.display = 'block';
+
+        try {
+          const res = await fetch(`${API_URL}/match/${matchId}`);
+          const data = await res.json();
+          if (data.data && data.data.stats) {
+            renderMatchPlayers(list, data.data.stats);
+          } else {
+            list.innerHTML = '<div class="empty-state"><p>Sin datos</p></div>';
+          }
+        } catch (err) {
+          list.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`;
+        }
+      } else {
+        body.style.display = 'block';
+      }
+    });
+  });
+}
+
+function renderMatchPlayers(container, stats) {
+  if (!stats.length) {
+    container.innerHTML = '<div class="empty-state"><p>Sin jugadores en este partido</p></div>';
+    return;
+  }
+
+  let html = '<div class="match-stats-table"><table><thead><tr>' +
+    '<th>Jugador</th><th>Val</th><th>G</th><th>A</th><th>Pases</th><th>Prec.%</th><th>Tiros</th><th>Reg.</th><th>Entr.</th></tr></thead><tbody>';
+
+  for (const s of stats) {
+    const valClass = s.valoracion >= 7.5 ? 'high' : s.valoracion >= 6 ? 'mid' : 'low';
+    html += `<tr>
+      <td class="player-name">${s.jugador || '—'}</td>
+      <td><span class="rating-badge ${valClass}">${s.valoracion ?? '—'}</span></td>
+      <td>${s.goles ?? '—'}</td>
+      <td>${s.asistencias ?? '—'}</td>
+      <td>${s.pases ?? '—'}</td>
+      <td>${s.precision_pases ?? '—'}</td>
+      <td>${s.tiros ?? '—'}</td>
+      <td>${s.regates ?? '—'}</td>
+      <td>${s.entradas ?? '—'}</td>
+    </tr>`;
   }
 
   html += '</tbody></table></div>';
   container.innerHTML = html;
 }
 
-async function deleteRow(id) {
-  if (!confirm('¿Eliminar este registro?')) return;
-  try {
-    await fetch(`${API_URL}/stats/${id}`, { method: 'DELETE' });
-    toast('Registro eliminado', 'info');
-    loadHistory();
-  } catch (err) {
-    toast('Error eliminando: ' + err.message, 'error');
-  }
-}
-
-// ── Dashboard ──
+// ── Dashboard (unchanged) ──
 function initDashboard() {
   const playerSelect = document.getElementById('dash-player');
   const statSelect = document.getElementById('dash-stat');
@@ -507,9 +640,7 @@ function initDashboard() {
   });
 
   statSelect.addEventListener('change', () => {
-    if (playerSelect.value) {
-      loadDashboardPlayerStats(playerSelect.value);
-    }
+    if (playerSelect.value) loadDashboardPlayerStats(playerSelect.value);
   });
 
   loadDashboardPlayers();
@@ -531,9 +662,7 @@ async function loadDashboardPlayers() {
       });
     }
     if (currentValue) select.value = currentValue;
-  } catch (e) {
-    // Silencioso
-  }
+  } catch (e) {}
 }
 
 async function loadDashboardPlayerStats(playerName) {
@@ -597,11 +726,9 @@ function updateChart(stats, statKey) {
   const textColor = isLight ? '#1a1d27' : '#e8eaf6';
   const gridColor = isLight ? '#d0d4dc' : '#2e3350';
 
-  if (dashChart) {
-    dashChart.destroy();
-  }
+  if (dashChart) dashChart.destroy();
 
-  const labels = stats.map(s => formatDate(s.fecha));
+  const labels = stats.map(s => formatDate(s.fecha || s.match_fecha));
   const values = stats.map(s => {
     const v = getStatValue(s, statKey);
     return v != null ? v : null;
@@ -640,39 +767,23 @@ function updateChart(stats, statKey) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          display: true,
-          labels: {
-            color: textColor,
-            font: { size: 12 }
-          }
-        },
+        legend: { display: true, labels: { color: textColor, font: { size: 12 } } },
         tooltip: {
           callbacks: {
-            label: (context) => {
-              const val = context.parsed.y;
-              return `${context.dataset.label}: ${val != null ? val : '—'}`;
-            }
+            label: (context) => `${context.dataset.label}: ${context.parsed.y != null ? context.parsed.y : '—'}`
           }
         }
       },
       scales: {
-        x: {
-          ticks: { color: textColor, font: { size: 11 } },
-          grid: { color: gridColor }
-        },
+        x: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } },
         y: {
           beginAtZero: !isRating,
-          suggestedMin,
-          suggestedMax,
+          suggestedMin, suggestedMax,
           ticks: { color: textColor, font: { size: 11 } },
           grid: { color: gridColor }
         }
       },
-      interaction: {
-        intersect: false,
-        mode: 'index'
-      }
+      interaction: { intersect: false, mode: 'index' }
     }
   });
 }
@@ -814,8 +925,6 @@ function renderRanking(data) {
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
-    const barPct = ((row.avg_valoracion || 0) / maxValoracion) * 100;
-    const barClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : 'normal';
     html += '<tr>';
     html += `<td>${getRankDisplay(i)}</td>`;
     html += `<td class="rank-player">${row.jugador || '—'}</td>`;
@@ -836,7 +945,6 @@ function renderRanking(data) {
   html += '</tbody></table></div>';
   container.innerHTML = html;
 
-  // Sort click handlers
   container.querySelectorAll('.sortable-th').forEach(th => {
     th.addEventListener('click', () => {
       const key = th.dataset.sort;

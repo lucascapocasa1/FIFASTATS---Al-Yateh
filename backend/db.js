@@ -19,8 +19,19 @@ async function getDB() {
   }
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rival TEXT NOT NULL,
+      descripcion TEXT,
+      fecha TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS stats (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER,
       jugador TEXT NOT NULL,
       goles INTEGER,
       asistencias INTEGER,
@@ -40,9 +51,13 @@ async function getDB() {
       distancia_recorrida_km REAL,
       distancia_sprint_km REAL,
       valoracion REAL,
-      fecha TEXT DEFAULT (datetime('now'))
+      fecha TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (match_id) REFERENCES matches(id)
     )
   `);
+
+  // Add match_id column if it doesn't exist (migration for old DBs)
+  try { db.run('ALTER TABLE stats ADD COLUMN match_id INTEGER REFERENCES matches(id)'); } catch (e) {}
 
   saveDB();
   return db;
@@ -54,10 +69,11 @@ function saveDB() {
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
-async function insertStats(stats) {
+async function insertStats(stats, matchId = null) {
+  console.log('[DB] insertStats - jugador:', stats?.jugador, 'matchId:', matchId);
   const db = await getDB();
   const fields = [
-    'jugador', 'goles', 'asistencias', 'tiros', 'precision_tiros',
+    'match_id', 'jugador', 'goles', 'asistencias', 'tiros', 'precision_tiros',
     'pases', 'precision_pases', 'regates', 'exito_regates',
     'entradas', 'exito_entradas', 'fueras_de_juego', 'faltas',
     'posesion_ganada', 'posesion_perdida', 'minutos_jugados',
@@ -65,25 +81,45 @@ async function insertStats(stats) {
   ];
 
   const placeholders = fields.map(() => '?').join(', ');
-  const values = fields.map(f => stats[f] ?? null);
+  const values = fields.map(f => f === 'match_id' ? matchId : (stats[f] ?? null));
+  console.log('[DB] insertStats - values:', JSON.stringify(values));
 
   db.run(
     `INSERT INTO stats (${fields.join(', ')}) VALUES (${placeholders})`,
     values
   );
 
+  const result = db.exec('SELECT MAX(id) as id FROM stats');
+  const id = result[0]?.values[0][0];
+  console.log('[DB] insertStats - id retornado:', id);
   saveDB();
-
-  // Return last inserted id
-  const result = db.exec('SELECT last_insert_rowid() as id');
-  return result[0]?.values[0][0];
+  return id;
 }
 
-async function getAllStats() {
+async function createMatch(rival, descripcion, fecha) {
+  console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha);
   const db = await getDB();
-  const result = db.exec('SELECT * FROM stats ORDER BY fecha DESC');
-  if (!result.length) return [];
+  db.run(
+    'INSERT INTO matches (rival, descripcion, fecha) VALUES (?, ?, ?)',
+    [rival, descripcion || '', fecha]
+  );
+  const result = db.exec('SELECT MAX(id) as id FROM matches');
+  const id = result[0]?.values[0][0];
+  console.log('[DB] createMatch - id:', id);
+  saveDB();
+  return id;
+}
 
+async function getMatches() {
+  const db = await getDB();
+  const result = db.exec(`
+    SELECT m.*, COUNT(s.id) as jugadores
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    GROUP BY m.id
+    ORDER BY m.created_at DESC
+  `);
+  if (!result.length) return [];
   const { columns, values } = result[0];
   return values.map(row => {
     const obj = {};
@@ -92,9 +128,31 @@ async function getAllStats() {
   });
 }
 
+async function getMatchStats(matchId) {
+  const db = await getDB();
+  const stmt = db.prepare('SELECT * FROM stats WHERE match_id = ? ORDER BY jugador ASC');
+  stmt.bind([matchId]);
+  const values = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    // Convert match_id to number
+    if (row.match_id !== null) row.match_id = Number(row.match_id);
+    values.push(row);
+  }
+  stmt.free();
+  return values;
+}
+
 async function deleteStats(id) {
   const db = await getDB();
   db.run('DELETE FROM stats WHERE id = ?', [id]);
+  saveDB();
+}
+
+async function deleteMatch(matchId) {
+  const db = await getDB();
+  db.run('DELETE FROM stats WHERE match_id = ?', [matchId]);
+  db.run('DELETE FROM matches WHERE id = ?', [matchId]);
   saveDB();
 }
 
@@ -139,7 +197,13 @@ async function getLeaderboard() {
 
 async function getStatsByPlayer(playerName) {
   const db = await getDB();
-  const stmt = db.prepare('SELECT * FROM stats WHERE LOWER(jugador) = LOWER(?) ORDER BY fecha ASC');
+  const stmt = db.prepare(
+    `SELECT s.*, m.rival, m.fecha as match_fecha
+     FROM stats s
+     LEFT JOIN matches m ON m.id = s.match_id
+     WHERE LOWER(s.jugador) = LOWER(?)
+     ORDER BY s.fecha ASC`
+  );
   stmt.bind([playerName]);
   const values = [];
   while (stmt.step()) {
@@ -156,4 +220,16 @@ async function getAllPlayers() {
   return result[0].values.map(row => row[0]);
 }
 
-module.exports = { getDB, insertStats, getAllStats, deleteStats, getLeaderboard, getStatsByPlayer, getAllPlayers };
+async function getAllStats() {
+  const db = await getDB();
+  const result = db.exec('SELECT * FROM stats ORDER BY fecha DESC');
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
+module.exports = { getDB, insertStats, createMatch, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };
