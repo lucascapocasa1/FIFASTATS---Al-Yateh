@@ -1,6 +1,6 @@
 # ⚽ FIFA Clubes Pro — Stats Tracker
 
-Aplicación web para procesar screenshots de la pantalla de **Rendimiento** del FIFA Clubes Pro y extraer las estadísticas de cada jugador automáticamente con OCR.
+Aplicación web para procesar screenshots de la pantalla de **Rendimiento** del FIFA Clubes Pro, extraer estadísticas con OCR y visualizarlas en dashboards, rankings y comparativas entre jugadores.
 
 ---
 
@@ -9,70 +9,92 @@ Aplicación web para procesar screenshots de la pantalla de **Rendimiento** del 
 ```
 fifa-stats/
 ├── backend/
-│   ├── server.js          → Servidor Express principal
-│   ├── routes.js          → Endpoints de la API
-│   ├── ocr.js             → OCR con Tesseract.js
-│   ├── parser.js          → Parseo de texto OCR a JSON
-│   ├── imageProcessor.js  → Recorte de zonas de la imagen
-│   ├── db.js              → Base de datos SQLite (sql.js)
-│   ├── .env               → Variables de entorno
+│   ├── server.js            → Servidor Express (API + frontend estático)
+│   ├── routes.js            → Endpoints REST
+│   ├── db.js                → Selector automático: PostgreSQL (prod) o SQLite (local)
+│   ├── db-pg.js             → Implementación PostgreSQL
+│   ├── db-sqlite.js         → Implementación SQLite (sql.js)
+│   ├── ocr.js               → OCR con Tesseract.js
+│   ├── parser.js            → Parseo de texto OCR + normalización de nombres
+│   ├── imageProcessor.js    → Recorte de zonas de la imagen
+│   ├── uploads/             → Imágenes subidas por partido
+│   ├── .env                 → Variables de entorno
 │   └── package.json
-└── frontend/
-    ├── index.html
-    ├── style.css
-    └── app.js
+├── frontend/
+│   ├── index.html
+│   ├── style.css
+│   └── app.js               → Toda la lógica del cliente
+├── Dockerfile               → Build para Render / producción
+├── render.yaml              → Config para Render Blueprint
+└── .dockerignore
 ```
 
 ---
 
-## 🚀 Cómo Correr en Local (VS Code)
+## 🚀 Cómo Correr en Local
 
-### 1. Requisitos previos
+### 1. Requisitos
 
-- **Node.js 18+** → https://nodejs.org/
-- **VS Code** con extensión **Live Server** (para el frontend)
+- **Node.js 18+**
+- **PostgreSQL** (opcional — si no tenés, usa SQLite automáticamente)
 
-### 2. Instalar dependencias del backend
-
-Abrí una terminal en VS Code (`Ctrl + `` ` ``) y ejecutá:
+### 2. Instalar dependencias
 
 ```bash
 cd backend
 npm install
 ```
 
-### 3. Iniciar el backend
+### 3. Configurar base de datos
+
+**Opción A — SQLite (automático, sin setup):**
+No hace nada. Crea y persiste en `backend/fifa_stats.db`.
+
+**Opción B — PostgreSQL:**
+Creá una base de datos llamada `fifa_stats` y agregá al `backend/.env`:
+
+```
+DATABASE_URL=postgresql://postgres:TU_PASS@localhost:5432/fifa_stats
+```
+
+### 4. Iniciar el backend
 
 ```bash
 cd backend
 npm start
 ```
 
-Deberías ver:
+El backend sirve tanto la API como los archivos del frontend:
 ```
 ✅ Servidor FIFA Stats corriendo en http://localhost:3001
 ```
 
-### 4. Iniciar el frontend
-
-**Opción A — Live Server (recomendada):**
-1. Abrí `frontend/index.html` en VS Code
-2. Click derecho → **"Open with Live Server"**
-3. Se abre en `http://localhost:5500` automáticamente
-
-**Opción B — Abrir directo en el navegador:**
-- Arrastrá `frontend/index.html` a tu navegador
-- ⚠️ Algunas funciones pueden no andar por políticas CORS locales
+Abrí `http://localhost:3001` en el navegador.
 
 ---
 
-## 📋 Cómo usar la app
+## 📋 Funcionalidades
 
-1. **Subí imágenes** (drag & drop o click) → screenshots del FIFA, pantalla "Rendimiento"
-2. Hacé click en **"Procesar imágenes"** → el OCR extrae las stats
-3. Revisá los resultados (se muestra el JSON de cada jugador)
-4. Si todo está bien, click en **"Guardar en base de datos"**
-5. En la pestaña **"Historial"** podés ver todos los registros guardados
+### Pestañas
+| Tab | Descripción |
+|-----|-------------|
+| **Inicio** | Último partido, racha de resultados, leader destacado, gráfico de rendimiento del equipo |
+| **Subir** | Drag & drop de screenshots → OCR → revisión → guardar |
+| **Dashboard** | Evolución por jugador (línea), perfil (radar), comparación (barras) + tabla head-to-head |
+| **Ranking** | Tabla completa con todos los jugadores, ordenable por cualquier stat |
+| **Historial** | Todos los partidos con búsqueda, filtro por temporada, edición y export CSV |
+| **Jugador** | Estadísticas individuales: resumen, evolución, perfil radar, export CSV |
+
+### Características
+- Reconocimiento automático de nombres con fuzzy matching (ej: "facundo" → "Facu")
+- Temporadas editables (texto libre: "2da Division", "Amistoso", etc.)
+- Edición de stats y datos del partido post-guardado
+- Exportación a CSV (partido y jugador)
+- Comparativa head-to-head con tabla de promedios y ganador por stat
+- Galería de imágenes por partido
+- Modo oscuro / claro
+- Checkboxes MVP IG y PART IG por jugador
+- Notas y detalle de goles por partido
 
 ---
 
@@ -81,102 +103,89 @@ Deberías ver:
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
 | POST | `/api/upload` | Sube imágenes y devuelve stats parseadas |
-| POST | `/api/save` | Guarda stats en SQLite |
-| GET | `/api/stats` | Devuelve historial completo |
-| DELETE | `/api/stats/:id` | Elimina un registro |
+| POST | `/api/save` | Guarda stats de un jugador |
+| POST | `/api/match` | Crea un nuevo partido |
+| GET | `/api/matches` | Lista partidos (filtro por `?season=`) |
+| GET | `/api/match/:id` | Partido con stats |
+| PUT | `/api/match/:id` | Actualiza datos del partido |
+| DELETE | `/api/match/:id` | Elimina partido |
+| POST | `/api/match/:id/images` | Sube imágenes a un partido |
+| DELETE | `/api/match/:id/images/:filename` | Elimina una imagen |
+| GET | `/api/stats` | Todas las estadísticas |
+| PUT | `/api/stats/:id` | Actualiza una estadística |
+| DELETE | `/api/stats/:id` | Elimina una estadística |
+| GET | `/api/stats/player/:name` | Stats de un jugador |
+| GET | `/api/leaderboard` | Ranking de jugadores |
+| GET | `/api/players` | Lista de jugadores |
+| GET | `/api/seasons` | Temporadas existentes |
+| GET | `/api/team/summary` | Resumen por partido del equipo |
 | GET | `/api/health` | Health check |
 
 ---
 
-## 📦 Ejemplo de respuesta JSON (`/api/upload`)
+## ☁️ Deploy en Render + Supabase
 
-```json
-{
-  "total": 1,
-  "exitosos": 1,
-  "fallidos": 0,
-  "results": [
-    {
-      "filename": "captura_lucasyjoaqui.png",
-      "success": true,
-      "data": {
-        "jugador": "lucasyjoaqui",
-        "goles": 5,
-        "asistencias": 2,
-        "tiros": 12,
-        "precision_tiros": 75,
-        "pases": 206,
-        "precision_pases": 90,
-        "regates": 148,
-        "exito_regates": 91,
-        "entradas": 24,
-        "exito_entradas": 25,
-        "fueras_de_juego": 1,
-        "faltas": 2,
-        "posesion_ganada": 27,
-        "posesion_perdida": 32,
-        "minutos_jugados": 92,
-        "distancia_recorrida_km": 16.5,
-        "distancia_sprint_km": 9.1,
-        "valoracion": 8.4
-      },
-      "warnings": [],
-      "errors": []
-    }
-  ]
-}
+### Arquitectura
+
 ```
+Usuario → Render (Web Service: frontend + API) → Supabase (PostgreSQL)
+```
+
+### Pasos
+
+1. **Subir a GitHub**
+   ```bash
+   git add .
+   git commit -m "ready for deploy"
+   git remote add origin https://github.com/TU_USUARIO/fifa-stats.git
+   git push -u origin main
+   ```
+
+2. **Crear base de datos en Supabase**
+   - [supabase.com](https://supabase.com) → New Project
+   - Guardar la **Connection String** (URI)
+   - Opciones: Data API ON, expose new tables OFF, RLS OFF
+
+3. **Crear Web Service en Render**
+   - [dashboard.render.com](https://dashboard.render.com) → New + → Web Service
+   - Connectar repo de GitHub
+   - Environment: **Docker**
+   - Plan: **Free**
+   - Variable de entorno: `DATABASE_URL` = URI de Supabase
+   - Variable de entorno: `NODE_ENV` = `production`
+
+4. **Listo**
+   - Render build + deploy automático
+   - Las tablas se crean solas al primer request
+   - URL: `https://fifa-stats.onrender.com`
+
+### Costo: $0/mes
+
+| Servicio | Plan |
+|----------|------|
+| Render Web Service | Free (se duerme a los 15 min) |
+| Supabase PostgreSQL | Free (500MB datos, 5GB transferencia) |
 
 ---
 
 ## 🔧 Troubleshooting
 
-### El OCR no detecta bien el nombre del jugador
-- Revisá el **debug OCR** que aparece en cada resultado (hay un desplegable)
-- Podés editar el nombre manualmente en el JSON antes de guardar (próxima versión)
-- Asegurate que la imagen sea el screenshot completo, sin recortes
+### El OCR no detecta bien el nombre
+- Revisá el **debug OCR** (desplegable en cada resultado)
+- Se puede editar manualmente en el dropdown
+- El fuzzy matching corrige automáticamente variaciones (facundo → Facu)
 
 ### Los valores aparecen como `null`
-- Tesseract necesita buena resolución — usá screenshots a resolución nativa
-- El texto OCR crudo aparece en el desplegable "debug" para que puedas diagnosticar
+- Usá screenshots a resolución nativa
+- Revisá el texto OCR crudo en el panel de debug
 
-### Error de CORS
-- Asegurate de abrir el frontend con Live Server (no directamente como archivo)
-- Verificá que el backend esté corriendo en el puerto 3001
+### Error "The server does not support SSL connections"
+- PostgreSQL local sin SSL: asegurate que no haya `DATABASE_URL` en `.env`, o comentala
 
 ### La primera imagen tarda mucho
-- Tesseract.js descarga el modelo de idioma español la primera vez (~30MB)
-- Las siguientes son mucho más rápidas
+- Tesseract.js descarga el modelo de idioma español (~30MB) la primera vez
 
----
-
-## ☁️ Deploy en la Nube (cuando estés listo)
-
-### Backend → Render.com
-1. Subí el directorio `backend/` a un repositorio GitHub
-2. En Render: New Web Service → conectá el repo
-3. Build command: `npm install`
-4. Start command: `npm start`
-5. Variables de entorno: `FRONTEND_URL=https://tu-app.pages.dev`
-
-### Frontend → Cloudflare Pages
-1. Subí el directorio `frontend/` a GitHub
-2. En Cloudflare Pages: conectá el repo
-3. No requiere build command (HTML/CSS/JS estático)
-4. Editá `API_URL` en `app.js` apuntando al backend de Render
-
----
-
-## 📝 Notas sobre el parseo
-
-Las estadísticas FIFA tienen formato **"jugador vs equipo"**:
-```
-Pases    13   206
-```
-El sistema siempre toma el **primer número** (el del jugador).
-
-Los porcentajes también:
-```
-Precisión en los pases (%)    85   90
-```
-→ Se guarda `85` (el del jugador).
+### Las APIs devuelven 500
+- Revisá la terminal del backend para ver el error exacto
+- Si usás PostgreSQL local, verificá que esté corriendo y la DB exista
+- Si usás Supabase, verificá la `DATABASE_URL`
