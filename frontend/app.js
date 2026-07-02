@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initHistorySeasonFilter();
   loadSeasons();
   setDefaultDate();
+  loadHome();
 });
 
 function setDefaultDate() {
@@ -66,6 +67,7 @@ function initTabs() {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(`tab-${tab}`).classList.add('active');
+      if (tab === 'home') loadHome();
       if (tab === 'history') { loadMatchHistory(); initTimeline(); }
       if (tab === 'dashboard') {
         const sel = document.getElementById('dash-player');
@@ -1770,6 +1772,228 @@ function renderTimeline(matches) {
     });
     scroll.appendChild(item);
   }
+}
+
+// ═══════════════════════════════════════════
+//  Home / Inicio
+// ═══════════════════════════════════════════
+
+let teamChart = null;
+
+async function loadHome() {
+  try {
+    const [matchesRes, leaderRes, teamRes] = await Promise.all([
+      fetchWithTimeout(`${API_URL}/matches`),
+      fetchWithTimeout(`${API_URL}/leaderboard`),
+      fetchWithTimeout(`${API_URL}/team/summary`)
+    ]);
+    const matchesData = await matchesRes.json();
+    const leaderData = await leaderRes.json();
+    const teamData = await teamRes.json();
+
+    const matches = matchesData.data || [];
+    const leaderboard = leaderData.data || [];
+    const teamSummary = teamData.data || [];
+
+    renderLastMatch(matches);
+    renderStreak(matches);
+    renderLeader(leaderboard);
+
+    const statKey = document.getElementById('team-chart-stat').value;
+    if (teamSummary.length) {
+      renderTeamChart(teamSummary, statKey);
+    } else {
+      document.getElementById('team-chart-wrapper').style.display = 'none';
+      document.getElementById('team-chart-empty').style.display = 'block';
+    }
+
+    // Wire stat selector
+    const sel = document.getElementById('team-chart-stat');
+    sel.onchange = () => {
+      if (teamSummary.length) renderTeamChart(teamSummary, sel.value);
+    };
+  } catch (e) {
+    console.error('Error cargando inicio:', e);
+  }
+}
+
+function renderLastMatch(matches) {
+  const body = document.getElementById('home-last-match-body');
+  if (!matches.length) {
+    body.innerHTML = '<div class="empty-state"><span class="empty-icon">📊</span><p>Sin partidos</p></div>';
+    return;
+  }
+  const m = matches[0];
+  const fecha = m.fecha ? new Date(m.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+  const gf = m.goles_favor != null ? m.goles_favor : -1;
+  const gc = m.goles_contra != null ? m.goles_contra : -1;
+  const hasResult = gf >= 0 && gc >= 0;
+  const resultClass = hasResult ? (gf > gc ? 'win' : gf < gc ? 'lose' : 'draw') : '';
+  const resultHtml = hasResult
+    ? `<span class="match-result-badge ${resultClass}" style="font-size:18px;padding:4px 14px">${gf}-${gc}</span>`
+    : '<span class="match-result-badge" style="font-size:18px;padding:4px 14px">—</span>';
+
+  body.innerHTML = `
+    <div class="home-stat-row"><span class="home-stat-label">Rival</span><span class="home-stat-value">${m.rival}</span></div>
+    <div class="home-stat-row"><span class="home-stat-label">Fecha</span><span class="home-stat-value">${fecha}</span></div>
+    <div class="home-stat-row"><span class="home-stat-label">Resultado</span>${resultHtml}</div>
+    <div class="home-stat-row"><span class="home-stat-label">Jugadores</span><span class="home-stat-value">${m.jugadores}</span></div>
+  `;
+}
+
+function renderStreak(matches) {
+  const body = document.getElementById('home-streak-body');
+  if (!matches.length) {
+    body.innerHTML = '<div class="empty-state"><span class="empty-icon">📊</span><p>Sin partidos</p></div>';
+    return;
+  }
+  const last5 = matches.slice(0, 5);
+  const results = last5.map(m => {
+    const gf = m.goles_favor != null ? m.goles_favor : -1;
+    const gc = m.goles_contra != null ? m.goles_contra : -1;
+    if (gf < 0 || gc < 0) return null;
+    return gf > gc ? 'win' : gf < gc ? 'lose' : 'draw';
+  }).filter(r => r !== null);
+
+  const wins = results.filter(r => r === 'win').length;
+  const draws = results.filter(r => r === 'draw').length;
+  const losses = results.filter(r => r === 'lose').length;
+
+  let streakLabel = '';
+  if (results.length) {
+    let count = 1;
+    const lastResult = results[results.length - 1];
+    for (let i = results.length - 2; i >= 0; i--) {
+      if (results[i] === lastResult) count++;
+      else break;
+    }
+    const label = lastResult === 'win' ? 'victorias' : lastResult === 'lose' ? 'derrotas' : 'empates';
+    streakLabel = `<div class="home-stat-row"><span class="home-stat-label">Racha actual</span><span class="home-stat-value">${count} ${label}</span></div>`;
+  }
+
+  const total = wins + draws + losses;
+  body.innerHTML = `
+    <div class="home-stat-row"><span class="home-stat-label">Partidos</span><span class="home-stat-value">${total}</span></div>
+    <div class="home-stat-row"><span class="home-stat-label">Victorias</span><span class="home-stat-value" style="color:var(--green)">${wins}</span></div>
+    <div class="home-stat-row"><span class="home-stat-label">Empates</span><span class="home-stat-value" style="color:var(--yellow)">${draws}</span></div>
+    <div class="home-stat-row"><span class="home-stat-label">Derrotas</span><span class="home-stat-value" style="color:var(--red)">${losses}</span></div>
+    ${streakLabel}
+  `;
+}
+
+function renderLeader(leaderboard) {
+  const body = document.getElementById('home-leader-body');
+  if (!leaderboard.length) {
+    body.innerHTML = '<div class="empty-state"><span class="empty-icon">🏆</span><p>Sin datos</p></div>';
+    return;
+  }
+  const top = leaderboard[0];
+  const name = top.jugador || '—';
+
+  body.innerHTML = `
+    <div class="home-leader-info">
+      <div class="home-leader-name" data-player="${name}">${name}</div>
+      <div class="home-leader-stat">⭐ ${top.avg_valoracion != null ? top.avg_valoracion.toFixed(1) : '—'} promedio</div>
+      <div class="home-leader-stat">⚽ ${top.total_goles || 0} goles · 🎯 ${top.total_asistencias || 0} asistencias</div>
+      <div class="home-leader-stat">📋 ${top.partidos || 0} partidos</div>
+    </div>
+  `;
+  body.querySelector('.home-leader-name')?.addEventListener('click', () => {
+    openPlayerPage(name);
+  });
+}
+
+function renderTeamChart(teamSummary, statKey) {
+  const ctx = document.getElementById('team-chart').getContext('2d');
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const textColor = isLight ? '#1a1d27' : '#e8eaf6';
+  const gridColor = isLight ? '#d0d4dc' : '#2e3350';
+
+  if (teamChart) teamChart.destroy();
+
+  document.getElementById('team-chart-wrapper').style.display = 'block';
+  document.getElementById('team-chart-empty').style.display = 'none';
+
+  const labels = teamSummary.map(m => {
+    const d = m.fecha ? new Date(m.fecha + 'T00:00:00') : null;
+    return d ? d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }) : '—';
+  });
+
+  const values = teamSummary.map(m => {
+    const v = m[statKey];
+    return v != null ? v : null;
+  });
+
+  const statLabels = {
+    avg_valoracion: 'Valoración promedio',
+    goles_favor: 'Goles a favor',
+    goles_contra: 'Goles en contra',
+    total_goles: 'Goles totales (equipo)',
+    avg_pases: 'Pases promedio',
+    avg_precision_pases: 'Precisión de pases %',
+    avg_tiros: 'Tiros promedio',
+    avg_posesion_ganada: 'Posesión ganada',
+    avg_entradas: 'Entradas promedio',
+    avg_regates: 'Regates promedio',
+  };
+
+  const isRating = statKey === 'avg_valoracion';
+  const suggestedMin = isRating ? 0 : undefined;
+  const suggestedMax = isRating ? 10 : undefined;
+
+  teamChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: statLabels[statKey] || statKey,
+        data: values,
+        borderColor: '#00e676',
+        backgroundColor: (context) => {
+          const c = context.chart.ctx;
+          const g = c.createLinearGradient(0, 0, 0, 300);
+          g.addColorStop(0, 'rgba(0, 230, 118, 0.25)');
+          g.addColorStop(1, 'rgba(0, 230, 118, 0.01)');
+          return g;
+        },
+        fill: true,
+        tension: 0.3,
+        pointBackgroundColor: '#00e676',
+        pointBorderColor: isLight ? '#ffffff' : '#0f1117',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { color: textColor, font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const i = context.dataIndex;
+              const m = teamSummary[i];
+              const rival = m.rival || '';
+              return `${rival}: ${context.parsed.y != null ? context.parsed.y : '—'}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } },
+        y: {
+          beginAtZero: !isRating,
+          suggestedMin, suggestedMax,
+          ticks: { color: textColor, font: { size: 11 } },
+          grid: { color: gridColor }
+        }
+      },
+      interaction: { intersect: false, mode: 'index' }
+    }
+  });
 }
 
 // ═══════════════════════════════════════════

@@ -530,6 +530,58 @@ body {
 }
 
 /* ── Summary Grid ── */
+/* ── Home / Inicio ── */
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.home-card .card-title { font-size: 15px; }
+.home-card-body { padding-top: 8px; }
+.home-card-body .empty-state { padding: 12px 0; }
+.home-card-body .empty-state p { font-size: 13px; }
+#home-last-match-body .match-result-badge { font-size: 18px; padding: 4px 14px; }
+.home-stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; border-bottom: 1px solid rgba(46,51,80,0.3);
+  font-size: 13px;
+}
+.home-stat-row:last-child { border-bottom: none; }
+.home-stat-label { color: var(--text-muted); }
+.home-stat-value { font-weight: 600; color: var(--text); }
+.home-streak-bar {
+  display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;
+}
+.home-streak-item {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+}
+.home-streak-item.win { background: var(--green); }
+.home-streak-item.draw { background: var(--yellow); color: #1a1d27; }
+.home-streak-item.lose { background: var(--red); }
+.home-leader-info {
+  text-align: center; padding: 8px 0;
+}
+.home-leader-name {
+  font-size: 18px; font-weight: 700; color: var(--accent);
+  cursor: pointer;
+}
+.home-leader-name:hover { text-decoration: underline; }
+.home-leader-stat {
+  font-size: 13px; color: var(--text-muted); margin-top: 4px;
+}
+.home-chart-controls {
+  display: flex; gap: 12px; padding: 8px 0 16px;
+}
+.home-chart-controls .dash-select { min-width: 240px; }
+#team-chart-wrapper { height: 350px; }
+
+@media (max-width: 800px) {
+  .home-grid { grid-template-columns: 1fr; }
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

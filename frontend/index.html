@@ -16,7 +16,8 @@
         <span>FIFA Clubes Pro <span class="logo-sub">Stats</span></span>
       </div>
       <nav class="nav-tabs">
-        <button class="nav-btn active" data-tab="upload">Subir</button>
+        <button class="nav-btn active" data-tab="home">Inicio</button>
+        <button class="nav-btn" data-tab="upload">Subir</button>
         <button class="nav-btn" data-tab="dashboard">Dashboard</button>
         <button class="nav-btn" data-tab="ranking">Ranking</button>
         <button class="nav-btn" data-tab="history">Historial</button>
@@ -28,8 +29,58 @@
 
   <main class="main">
 
+    <!-- ======== TAB: HOME ======== -->
+    <section class="tab active" id="tab-home">
+      <div class="home-grid">
+        <div class="card home-card" id="home-last-match">
+          <h3 class="card-title">🆚 Último partido</h3>
+          <div class="home-card-body" id="home-last-match-body">
+            <div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando...</p></div>
+          </div>
+        </div>
+        <div class="card home-card" id="home-streak">
+          <h3 class="card-title">📊 Racha</h3>
+          <div class="home-card-body" id="home-streak-body">
+            <div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando...</p></div>
+          </div>
+        </div>
+        <div class="card home-card" id="home-leader">
+          <h3 class="card-title">🏆 Líder del ranking</h3>
+          <div class="home-card-body" id="home-leader-body">
+            <div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando...</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">📈 Rendimiento del equipo</h2>
+        </div>
+        <div class="home-chart-controls">
+          <select id="team-chart-stat" class="dash-select">
+            <option value="avg_valoracion">Valoración promedio</option>
+            <option value="goles_favor">Goles a favor</option>
+            <option value="goles_contra">Goles en contra</option>
+            <option value="total_goles">Goles totales (equipo)</option>
+            <option value="avg_pases">Pases promedio</option>
+            <option value="avg_precision_pases">Precisión de pases %</option>
+            <option value="avg_tiros">Tiros promedio</option>
+            <option value="avg_posesion_ganada">Posesión ganada</option>
+            <option value="avg_entradas">Entradas promedio</option>
+            <option value="avg_regates">Regates promedio</option>
+          </select>
+        </div>
+        <div id="team-chart-wrapper">
+          <canvas id="team-chart"></canvas>
+        </div>
+        <div id="team-chart-empty" class="empty-state" style="display:none">
+          <span class="empty-icon">📊</span>
+          <p>No hay datos de partidos todavía.</p>
+        </div>
+      </div>
+    </section>
+
     <!-- ======== TAB: UPLOAD ======== -->
-    <section class="tab active" id="tab-upload">
+    <section class="tab" id="tab-upload">
 
       <div class="card">
         <h2 class="card-title">Subir capturas de rendimiento</h2>

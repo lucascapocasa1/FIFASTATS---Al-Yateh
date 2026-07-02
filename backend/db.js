@@ -300,6 +300,38 @@ async function getStatsByPlayer(playerName) {
   return values;
 }
 
+async function getTeamSummary() {
+  const db = await getDB();
+  const result = db.exec(`
+    SELECT
+      m.id, m.rival, m.fecha, m.goles_favor, m.goles_contra,
+      COUNT(s.id) as jugadores,
+      ROUND(AVG(s.valoracion), 2) as avg_valoracion,
+      ROUND(AVG(s.pases), 1) as avg_pases,
+      ROUND(AVG(s.precision_pases), 1) as avg_precision_pases,
+      ROUND(AVG(s.posesion_ganada), 1) as avg_posesion_ganada,
+      ROUND(AVG(s.posesion_perdida), 1) as avg_posesion_perdida,
+      ROUND(AVG(s.tiros), 1) as avg_tiros,
+      ROUND(AVG(s.entradas), 1) as avg_entradas,
+      ROUND(AVG(s.regates), 1) as avg_regates,
+      ROUND(AVG(s.faltas), 1) as avg_faltas,
+      ROUND(AVG(s.minutos_jugados), 0) as avg_minutos,
+      SUM(s.goles) as total_goles,
+      SUM(s.asistencias) as total_asistencias
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    GROUP BY m.id
+    ORDER BY m.fecha ASC
+  `);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
 async function getAllPlayers() {
   const db = await getDB();
   const result = db.exec('SELECT DISTINCT jugador FROM stats ORDER BY jugador ASC');
@@ -333,4 +365,4 @@ const updateMatch = serialized(_updateMatch);
 const deleteStats = serialized(_deleteStats);
 const deleteMatch = serialized(_deleteMatch);
 
-module.exports = { getDB, insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons };
+module.exports = { getDB, insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary };

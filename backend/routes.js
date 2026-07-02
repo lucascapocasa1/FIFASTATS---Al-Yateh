@@ -5,7 +5,7 @@ const router = express.Router();
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
-const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons } = require('./db');
+const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary } = require('./db');
 
 const CONCURRENCY = 3;
 
@@ -312,6 +312,18 @@ router.get('/seasons', async (req, res) => {
   try {
     const seasons = await getSeasons();
     res.json({ data: seasons });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /team/summary
+ */
+router.get('/team/summary', async (req, res) => {
+  try {
+    const summary = await getTeamSummary();
+    res.json({ data: summary });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
