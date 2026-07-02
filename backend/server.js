@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3001;
 // CORS - permite requests desde el frontend
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
-  methods: ['GET', 'POST', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type']
 }));
 

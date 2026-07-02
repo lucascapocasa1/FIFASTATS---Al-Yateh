@@ -5,7 +5,7 @@ const router = express.Router();
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
-const { insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
+const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
 
 const CONCURRENCY = 3;
 
@@ -107,13 +107,13 @@ router.post('/upload', upload.array('images', 30), async (req, res) => {
  */
 router.post('/match', async (req, res) => {
   try {
-    const { rival, descripcion, fecha } = req.body;
-    console.log('[API] POST /match - body:', { rival, descripcion, fecha });
+    const { rival, descripcion, fecha, goles_favor, goles_contra } = req.body;
+    console.log('[API] POST /match - body:', { rival, descripcion, fecha, goles_favor, goles_contra });
     if (!rival || !fecha) {
       console.log('[API] POST /match - Campos faltantes');
       return res.status(400).json({ error: 'Faltan campos requeridos: rival, fecha' });
     }
-    const id = await createMatch(rival, descripcion, fecha);
+    const id = await createMatch(rival, descripcion, fecha, goles_favor || 0, goles_contra || 0);
     console.log('[API] POST /match - Creado con id:', id);
     res.json({ success: true, id });
   } catch (err) {
@@ -161,6 +161,20 @@ router.get('/match/:id', async (req, res) => {
     }
     const stats = await getMatchStats(matchId);
     res.json({ data: { ...match, stats } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /match/:id
+ * Actualiza datos del partido (rival, fecha, resultado, etc.)
+ */
+router.put('/match/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await updateMatch(id, req.body);
+    res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

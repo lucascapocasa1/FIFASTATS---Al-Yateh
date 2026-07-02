@@ -59,6 +59,9 @@ async function getDB() {
   // Add match_id column if it doesn't exist (migration for old DBs)
   try { db.run('ALTER TABLE stats ADD COLUMN match_id INTEGER REFERENCES matches(id)'); } catch (e) {}
   try { db.run("ALTER TABLE stats ADD COLUMN posicion TEXT DEFAULT ''"); } catch (e) {}
+  // Match result columns
+  try { db.run("ALTER TABLE matches ADD COLUMN goles_favor INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN goles_contra INTEGER DEFAULT 0"); } catch (e) {}
 
   saveDB();
   return db;
@@ -107,12 +110,12 @@ async function _insertStats(stats, matchId = null) {
   return id;
 }
 
-async function _createMatch(rival, descripcion, fecha) {
-  console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha);
+async function _createMatch(rival, descripcion, fecha, golesFavor = 0, golesContra = 0) {
+  console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha, 'gf:', golesFavor, 'gc:', golesContra);
   const db = await getDB();
   db.run(
-    'INSERT INTO matches (rival, descripcion, fecha) VALUES (?, ?, ?)',
-    [rival, descripcion || '', fecha]
+    'INSERT INTO matches (rival, descripcion, fecha, goles_favor, goles_contra) VALUES (?, ?, ?, ?, ?)',
+    [rival, descripcion || '', fecha, golesFavor, golesContra]
   );
   const result = db.exec('SELECT MAX(id) as id FROM matches');
   const id = result[0]?.values[0][0];
@@ -191,6 +194,18 @@ async function _updateStats(id, data) {
 async function _deleteStats(id) {
   const db = await getDB();
   db.run('DELETE FROM stats WHERE id = ?', [id]);
+  saveDB();
+}
+
+async function _updateMatch(id, data) {
+  console.log('[DB] updateMatch - id:', id, 'data:', JSON.stringify(data));
+  const db = await getDB();
+  const allowed = ['rival', 'descripcion', 'fecha', 'goles_favor', 'goles_contra'];
+  const sets = allowed.filter(f => f in data).map(f => `${f} = ?`);
+  const values = allowed.filter(f => f in data).map(f => data[f]);
+  if (!sets.length) throw new Error('No hay campos para actualizar');
+  values.push(id);
+  db.run(`UPDATE matches SET ${sets.join(', ')} WHERE id = ?`, values);
   saveDB();
 }
 
@@ -301,7 +316,8 @@ async function getAllStats() {
 const insertStats = serialized(_insertStats);
 const createMatch = serialized(_createMatch);
 const updateStats = serialized(_updateStats);
+const updateMatch = serialized(_updateMatch);
 const deleteStats = serialized(_deleteStats);
 const deleteMatch = serialized(_deleteMatch);
 
-module.exports = { getDB, insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };
+module.exports = { getDB, insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };

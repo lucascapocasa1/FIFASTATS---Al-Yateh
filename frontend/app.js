@@ -501,10 +501,12 @@ async function saveAllPlayers() {
     // 1. Crear el partido (una sola vez)
     let matchId = state._matchId;
     if (!matchId) {
+      const goles_favor = parseInt(document.getElementById('match-gf').value) || 0;
+      const goles_contra = parseInt(document.getElementById('match-gc').value) || 0;
       const matchRes = await fetchWithTimeout(`${API_URL}/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rival, descripcion, fecha })
+        body: JSON.stringify({ rival, descripcion, fecha, goles_favor, goles_contra })
       }, 10000);
       const matchData = await matchRes.json();
       if (!matchData.success) throw new Error('Error creando partido');
@@ -608,6 +610,14 @@ async function renderMatchHistory(matches, container) {
 
     const fecha = match.fecha ? new Date(match.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
 
+    const gf = match.goles_favor != null ? match.goles_favor : -1;
+    const gc = match.goles_contra != null ? match.goles_contra : -1;
+    const hasResult = gf >= 0 && gc >= 0;
+    const resultClass = hasResult ? (gf > gc ? 'win' : gf < gc ? 'lose' : 'draw') : '';
+    const resultHtml = hasResult
+      ? `<span class="match-result-badge ${resultClass}">${gf}-${gc}</span>`
+      : '';
+
     card.innerHTML = `
       <div class="match-header" data-match-id="${match.id}">
         <div class="match-info">
@@ -616,6 +626,7 @@ async function renderMatchHistory(matches, container) {
           ${match.descripcion ? `<span class="match-desc">${match.descripcion}</span>` : ''}
         </div>
         <div class="match-meta">
+          ${resultHtml}
           <span class="match-players">👥 ${match.jugadores} jug.</span>
           <button class="btn btn-danger btn-sm match-delete-btn" data-match-id="${match.id}" title="Eliminar partido">✕</button>
           <span class="result-arrow">▾</span>
@@ -718,6 +729,8 @@ function renderMatchPlayers(container, stats, matchId, matchInfo) {
   const mvpName = mvps.length > 0 ? mvps[Math.floor(Math.random() * mvps.length)] : null;
 
   container.innerHTML = '';
+  statsCache.length = 0;
+  statsCache.push(...stats);
 
   // Match Report (pitch + facts)
   const report = renderMatchReport(stats, mvpName, matchInfo);
@@ -729,13 +742,29 @@ function renderMatchPlayers(container, stats, matchId, matchInfo) {
   table.innerHTML = buildMatchTable(stats, mvpName);
   container.appendChild(table);
 
+  // Player links in table
+  table.querySelectorAll('.player-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = link.dataset.player;
+      if (name) openPlayerPage(name);
+    });
+  });
+
   const editRow = document.createElement('div');
   editRow.className = 'match-edit-row';
-  editRow.innerHTML = `<button class="btn btn-sm btn-ghost btn-edit-match">✏️ Editar</button>`;
+  editRow.innerHTML = `
+    <button class="btn btn-sm btn-ghost btn-edit-match">✏️ Editar jugadores</button>
+    <button class="btn btn-sm btn-ghost btn-edit-match-data">📋 Editar partido</button>
+  `;
   container.appendChild(editRow);
 
   editRow.querySelector('.btn-edit-match').addEventListener('click', () => {
     enterEditMode(container, stats, matchId, matchInfo);
+  });
+
+  editRow.querySelector('.btn-edit-match-data').addEventListener('click', () => {
+    enterEditMatchMode(container, matchInfo || {}, matchId);
   });
 }
 
@@ -753,12 +782,21 @@ function renderMatchReport(stats, mvpName, matchInfo) {
 
   const fecha = matchInfo && matchInfo.fecha ? new Date(matchInfo.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
 
+  const gf = matchInfo && matchInfo.goles_favor != null ? matchInfo.goles_favor : -1;
+  const gc = matchInfo && matchInfo.goles_contra != null ? matchInfo.goles_contra : -1;
+  const hasResult = gf >= 0 && gc >= 0;
+  const resultClass = hasResult ? (gf > gc ? 'win' : gf < gc ? 'lose' : 'draw') : '';
+  const resultHtml = hasResult
+    ? `<span class="match-result-badge ${resultClass}">${gf}-${gc}</span>`
+    : '<span class="match-result-badge" style="color:var(--text-dim)">—</span>';
+
   div.innerHTML = `
     <div class="match-report-header">
       <div class="match-report-title">⚽ Resumen del Partido</div>
-      <div class="match-report-meta">
-        <span>🆚 ${matchInfo && matchInfo.rival ? matchInfo.rival : '—'}</span>
-        <span>📅 ${fecha}</span>
+      <div class="match-report-meta" id="match-report-meta-${matchInfo?.id || '0'}">
+        <span class="match-report-rival">🆚 ${matchInfo && matchInfo.rival ? matchInfo.rival : '—'}</span>
+        <span class="match-report-fecha">📅 ${fecha}</span>
+        <span class="match-report-result">${resultHtml}</span>
         <span>👥 ${stats.length} jug.</span>
       </div>
     </div>
@@ -944,7 +982,7 @@ function buildMatchTable(stats, mvpName) {
     const isMvp = s.jugador === mvpName;
     html += `<tr class="${isMvp ? 'mvp-row' : ''}">`;
     html += `<td><span class="pos-badge">${posLabel}</span></td>`;
-    html += `<td class="player-name">${s.jugador || '—'}${isMvp ? ' 👑' : ''}</td>`;
+    html += `<td class="player-name"><a class="player-link" data-player="${s.jugador || ''}">${s.jugador || '—'}${isMvp ? ' 👑' : ''}</a></td>`;
     html += `<td><span class="rating-badge ${valClass}">${s.valoracion ?? '—'}</span></td>`;
     html += `<td>${s.goles ?? '—'}</td>`;
     html += `<td>${s.asistencias ?? '—'}</td>`;
@@ -1049,11 +1087,92 @@ function enterEditMode(container, stats, matchId, matchInfo) {
       if (data.data && data.data.stats) {
         renderMatchPlayers(container, data.data.stats, matchId, data.data);
       }
-    } catch {}
+    } catch {
+      toast('Error al recargar datos del partido', 'error');
+    }
+  });
+
+  // Radar stat checkbox listeners
+  document.querySelectorAll('.radar-check input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (currentChartType === 'radar') {
+        const player = document.getElementById('dash-player').value;
+        if (player) loadDashboardPlayerStats(player);
+      }
+    });
   });
 }
 
-// ── Dashboard (unchanged) ──
+// ── Edit Match Data ──
+function enterEditMatchMode(container, matchInfo, matchId) {
+  // Find the match report meta section and replace with editable form
+  const metaEl = document.getElementById(`match-report-meta-${matchId}`);
+  if (!metaEl) return;
+
+  const currentRival = matchInfo.rival || '';
+  const currentFecha = matchInfo.fecha || '';
+  const currentDesc = matchInfo.descripcion || '';
+  const currentGf = matchInfo.goles_favor != null ? matchInfo.goles_favor : 0;
+  const currentGc = matchInfo.goles_contra != null ? matchInfo.goles_contra : 0;
+
+  metaEl.innerHTML = `
+    <div class="match-edit-meta">
+      <input type="text" id="edit-match-rival" class="match-input" value="${currentRival}" placeholder="Rival" />
+      <input type="date" id="edit-match-fecha" class="match-input match-date" value="${currentFecha}" />
+      <input type="text" id="edit-match-desc" class="match-input" value="${currentDesc}" placeholder="Descripción" style="min-width:140px" />
+      <div class="match-result-input">
+        <input type="number" id="edit-match-gf" class="match-input score-input" min="0" value="${currentGf}" />
+        <span class="score-sep">-</span>
+        <input type="number" id="edit-match-gc" class="match-input score-input" min="0" value="${currentGc}" />
+      </div>
+      <button class="btn btn-sm btn-success" id="btn-save-match-data">💾</button>
+      <button class="btn btn-sm btn-ghost" id="btn-cancel-match-data">✕</button>
+    </div>
+  `;
+
+  document.getElementById('btn-save-match-data').addEventListener('click', async () => {
+    const body = {
+      rival: document.getElementById('edit-match-rival').value.trim(),
+      fecha: document.getElementById('edit-match-fecha').value,
+      descripcion: document.getElementById('edit-match-desc').value.trim(),
+      goles_favor: parseInt(document.getElementById('edit-match-gf').value) || 0,
+      goles_contra: parseInt(document.getElementById('edit-match-gc').value) || 0,
+    };
+    if (!body.rival || !body.fecha) { toast('Rival y fecha son obligatorios', 'error'); return; }
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast('Partido actualizado', 'success');
+        // Reload match data
+        const r2 = await fetchWithTimeout(`${API_URL}/match/${matchId}`);
+        const d2 = await r2.json();
+        if (d2.data && d2.data.stats) {
+          renderMatchPlayers(container, d2.data.stats, matchId, d2.data);
+        }
+        loadMatchHistory();
+        initTimeline();
+      } else {
+        toast('Error actualizando: ' + (data.error || 'desconocido'), 'error');
+      }
+    } catch (err) {
+      toast('Error: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('btn-cancel-match-data').addEventListener('click', () => {
+    renderMatchPlayers(container, statsCache || [], matchId, matchInfo);
+  });
+}
+
+// Keep stats cache for cancel edit match data
+const statsCache = [];
+
+// ── Dashboard ──
 function initDashboard() {
   const playerSelect = document.getElementById('dash-player');
   const statSelect = document.getElementById('dash-stat');
@@ -1369,7 +1488,7 @@ function renderRanking(data) {
     const row = data[i];
     html += '<tr>';
     html += `<td>${getRankDisplay(i)}</td>`;
-    html += `<td class="rank-player">${row.jugador || '—'}</td>`;
+    html += `<td class="rank-player"><a class="player-link" data-player="${row.jugador || ''}">${row.jugador || '—'}</a></td>`;
     html += `<td>${row.partidos ?? '—'}</td>`;
     html += `<td><span class="rating-badge ${row.avg_valoracion >= 7.5 ? 'high' : row.avg_valoracion >= 6 ? 'mid' : 'low'}">${row.avg_valoracion ?? '—'}</span></td>`;
     html += `<td>${row.avg_goles ?? '—'}</td>`;
@@ -1386,6 +1505,14 @@ function renderRanking(data) {
 
   html += '</tbody></table></div>';
   container.innerHTML = html;
+
+  container.querySelectorAll('.player-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = link.dataset.player;
+      if (name) openPlayerPage(name);
+    });
+  });
 
   container.querySelectorAll('.sortable-th').forEach(th => {
     th.addEventListener('click', () => {
@@ -1473,19 +1600,35 @@ function initDashboardChartType() {
       const chartWrapper = document.getElementById('dash-chart-wrapper');
       const emptyState = document.getElementById('dash-empty');
 
+      const radarSelector = document.getElementById('radar-stats-selector');
       if (currentChartType === 'bar') {
         playerGroup.style.display = 'none';
         statGroup.style.display = 'flex';
+        radarSelector.style.display = 'none';
         emptyState.innerHTML = '<span class="empty-icon">📊</span><p>Seleccioná una estadística para comparar jugadores</p>';
         emptyState.style.display = 'block';
         chartWrapper.style.display = 'none';
         document.getElementById('dash-summary-card').style.display = 'none';
         if (dashChart) { dashChart.destroy(); dashChart = null; }
-        // Load bar chart
         loadBarChart();
+      } else if (currentChartType === 'radar') {
+        playerGroup.style.display = 'flex';
+        statGroup.style.display = 'none';
+        radarSelector.style.display = 'flex';
+        const player = document.getElementById('dash-player').value;
+        if (player) {
+          loadDashboardPlayerStats(player);
+        } else {
+          emptyState.innerHTML = '<span class="empty-icon">🕸️</span><p>Seleccioná un jugador para ver su perfil</p>';
+          emptyState.style.display = 'block';
+          chartWrapper.style.display = 'none';
+          document.getElementById('dash-summary-card').style.display = 'none';
+          if (dashChart) { dashChart.destroy(); dashChart = null; }
+        }
       } else {
         playerGroup.style.display = 'flex';
         statGroup.style.display = 'flex';
+        radarSelector.style.display = 'none';
         const player = document.getElementById('dash-player').value;
         if (player) {
           loadDashboardPlayerStats(player);
@@ -1619,6 +1762,14 @@ async function loadBarChart() {
   }
 }
 
+const RADAR_KEYS = ['valoracion', 'goles', 'asistencias', 'pases', 'precision_pases', 'regates', 'entradas', 'tiros', 'minutos_jugados', 'posesion_ganada'];
+const RADAR_LABELS = { valoracion: 'Valoración', goles: 'Goles', asistencias: 'Asistencias', pases: 'Pases', precision_pases: 'Precisión %', regates: 'Regates', entradas: 'Entradas', tiros: 'Tiros', minutos_jugados: 'Minutos', posesion_ganada: 'Pos. Ganada' };
+const RADAR_NORMALIZERS = { valoracion: 10, goles: 5, asistencias: 5, pases: 150, precision_pases: 100, regates: 30, entradas: 30, tiros: 20, minutos_jugados: 120, posesion_ganada: 20 };
+
+function getRadarSelectedKeys() {
+  return Array.from(document.querySelectorAll('.radar-check input[type="checkbox"]:checked')).map(cb => cb.dataset.rkey);
+}
+
 function updateChartRadar(stats) {
   const ctx = document.getElementById('dash-chart').getContext('2d');
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
@@ -1627,31 +1778,28 @@ function updateChartRadar(stats) {
 
   if (dashChart) dashChart.destroy();
 
-  // Compute averages
+  const selected = getRadarSelectedKeys();
+  if (!selected.length) {
+    document.getElementById('dash-empty').innerHTML = '<span class="empty-icon">🕸️</span><p>Seleccioná al menos una estadística</p>';
+    document.getElementById('dash-empty').style.display = 'block';
+    document.getElementById('dash-chart-wrapper').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('dash-empty').style.display = 'none';
+  document.getElementById('dash-chart-wrapper').style.display = 'block';
+
   const avg = (key) => {
     const vals = stats.map(s => s[key]).filter(v => v != null);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
   };
 
-  const radarLabels = [
-    'Valoración', 'Goles', 'Asistencias', 'Pases',
-    'Precisión %', 'Regates', 'Entradas', 'Tiros'
-  ];
-
-  const rawValues = [
-    avg('valoracion'),
-    avg('goles'),
-    avg('asistencias'),
-    avg('pases'),
-    avg('precision_pases'),
-    avg('regates'),
-    avg('entradas'),
-    avg('tiros'),
-  ];
-
-  // Normalize to 0-10 scale for visual balance
-  const normalizers = [10, 5, 5, 150, 100, 30, 30, 20];
-  const radarData = rawValues.map((v, i) => Math.min(v / normalizers[i] * 10, 10));
+  const radarLabels = selected.map(k => RADAR_LABELS[k] || k);
+  const rawValues = selected.map(k => avg(k));
+  const radarData = selected.map((k, i) => {
+    const norm = RADAR_NORMALIZERS[k] || 10;
+    return Math.min(rawValues[i] / norm * 10, 10);
+  });
 
   dashChart = new Chart(ctx, {
     type: 'radar',
@@ -1678,7 +1826,10 @@ function updateChartRadar(stats) {
           callbacks: {
             label: (context) => {
               const i = context.dataIndex;
-              return `${radarLabels[i]}: ${rawValues[i] != null ? (radarLabels[i].includes('%') ? rawValues[i] : rawValues[i].toFixed(1)) : '—'}`;
+              const raw = rawValues[i];
+              const label = radarLabels[i];
+              if (raw == null) return `${label}: —`;
+              return `${label}: ${label.includes('%') ? raw.toFixed(0) + '%' : raw.toFixed(1)}`;
             }
           }
         }
@@ -1696,6 +1847,210 @@ function updateChartRadar(stats) {
     }
   });
 }
+
+// ── Player Page ──
+function openPlayerPage(playerName) {
+  document.getElementById('nav-player').style.display = 'inline-block';
+  document.getElementById('nav-player').click();
+  loadPlayerData(playerName);
+}
+
+async function loadPlayerData(playerName) {
+  const content = document.getElementById('player-content');
+  const header = document.getElementById('player-name-header');
+  header.textContent = playerName;
+  content.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando datos de ' + playerName + '...</p></div>';
+
+  try {
+    const [statsRes, leaderRes] = await Promise.all([
+      fetchWithTimeout(`${API_URL}/stats/player/${encodeURIComponent(playerName)}`),
+      fetchWithTimeout(`${API_URL}/leaderboard`)
+    ]);
+    const statsData = await statsRes.json();
+    const leaderData = await leaderRes.json();
+
+    if (!statsData.data || !statsData.data.length) {
+      content.innerHTML = '<div class="empty-state"><span class="empty-icon">❌</span><p>Sin datos para este jugador</p></div>';
+      return;
+    }
+
+    const stats = statsData.data;
+    const leaderRow = (leaderData.data || []).find(p => p.jugador?.toLowerCase() === playerName.toLowerCase());
+
+    // Summary
+    const n = stats.length;
+    const avgVal = stats.reduce((s, r) => s + (r.valoracion || 0), 0) / n;
+    const totalG = stats.reduce((s, r) => s + (r.goles || 0), 0);
+    const totalA = stats.reduce((s, r) => s + (r.asistencias || 0), 0);
+    const avgPases = stats.reduce((s, r) => s + (r.pases || 0), 0) / n;
+    const avgPrec = stats.reduce((s, r) => s + (r.precision_pases || 0), 0) / n;
+    const avgEnt = stats.reduce((s, r) => s + (r.entradas || 0), 0) / n;
+
+    let html = `
+      <div class="player-summary-grid">
+        <div class="summary-item"><div class="summary-value highlight">${avgVal.toFixed(1)}</div><div class="summary-label">⭐ Valoración</div></div>
+        <div class="summary-item"><div class="summary-value">${n}</div><div class="summary-label">Partidos</div></div>
+        <div class="summary-item"><div class="summary-value">${totalG}</div><div class="summary-label">⚽ Goles</div></div>
+        <div class="summary-item"><div class="summary-value">${totalA}</div><div class="summary-label">🎯 Asistencias</div></div>
+        <div class="summary-item"><div class="summary-value">${avgPases.toFixed(0)}</div><div class="summary-label">↗ Pases/p</div></div>
+        <div class="summary-item"><div class="summary-value">${avgPrec.toFixed(0)}%</div><div class="summary-label">✅ Prec. Pases</div></div>
+        <div class="summary-item"><div class="summary-value">${avgEnt.toFixed(1)}</div><div class="summary-label">🛡 Entradas/p</div></div>
+        <div class="summary-item"><div class="summary-value">${leaderRow && leaderRow._rank !== undefined ? '#' + leaderRow._rank : '—'}</div><div class="summary-label">🏆 Ranking</div></div>
+      </div>
+    `;
+
+    // Charts side by side
+    html += `<div class="player-chart-row">
+      <div class="chart-box"><canvas id="player-chart-line"></canvas></div>
+      <div class="chart-box"><canvas id="player-chart-radar"></canvas></div>
+    </div>`;
+
+    // Match history table
+    html += `<h3 style="font-size:14px;color:var(--text-muted);margin:16px 0 8px;">📋 Historial de partidos</h3>`;
+    html += `<div class="player-matches-table"><table><thead><tr>
+      <th>Fecha</th><th>Rival</th><th>Pos</th><th>Val</th><th>G</th><th>A</th><th>Pases</th><th>Prec.%</th><th>Reg.</th><th>Entr.</th><th>Tiros</th>
+    </tr></thead><tbody>`;
+
+    // Sort by date ascending
+    const sorted = [...stats].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    for (const s of sorted) {
+      const fecha = s.match_fecha || s.fecha || '';
+      const d = fecha ? new Date(fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }) : '—';
+      const posLabel = s.posicion ? POSITIONS.find(p => p.id === s.posicion)?.label.split(' - ')[0] || s.posicion : '—';
+      const valClass = s.valoracion >= 7.5 ? 'high' : s.valoracion >= 6 ? 'mid' : 'low';
+      html += `<tr>
+        <td style="color:var(--text-muted);font-size:12px">${d}</td>
+        <td>${s.rival || '—'}</td>
+        <td><span class="pos-badge">${posLabel}</span></td>
+        <td><span class="rating-badge ${valClass}">${s.valoracion ?? '—'}</span></td>
+        <td>${s.goles ?? '—'}</td>
+        <td>${s.asistencias ?? '—'}</td>
+        <td>${s.pases ?? '—'}</td>
+        <td>${s.precision_pases ?? '—'}</td>
+        <td>${s.regates ?? '—'}</td>
+        <td>${s.entradas ?? '—'}</td>
+        <td>${s.tiros ?? '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+
+    content.innerHTML = html;
+
+    // Charts
+    const ctxLine = document.getElementById('player-chart-line').getContext('2d');
+    const ctxRadar = document.getElementById('player-chart-radar').getContext('2d');
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    const textColor = isLight ? '#1a1d27' : '#e8eaf6';
+    const gridColor = isLight ? '#d0d4dc' : '#2e3350';
+
+    // Line chart: valoracion over time
+    const lineLabels = sorted.map(s => s.match_fecha || s.fecha ? new Date((s.match_fecha || s.fecha) + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }) : '');
+    const lineValues = sorted.map(s => s.valoracion != null ? s.valoracion : null);
+    new Chart(ctxLine, {
+      type: 'line',
+      data: {
+        labels: lineLabels,
+        datasets: [{
+          label: 'Valoración',
+          data: lineValues,
+          borderColor: '#00c3ff',
+          backgroundColor: (ctx) => {
+            const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 200);
+            g.addColorStop(0, 'rgba(0,195,255,0.3)');
+            g.addColorStop(1, 'rgba(0,195,255,0.02)');
+            return g;
+          },
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: '#00c3ff',
+          pointRadius: 3,
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: textColor, font: { size: 11 } } },
+          title: { display: true, text: '📈 Evolución Valoración', color: textColor, font: { size: 13 } }
+        },
+        scales: {
+          x: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+          y: { min: 0, max: 10, ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+
+    // Radar chart: use same logic as dashboard
+    const selected = getRadarSelectedKeys();
+    const rKeys = selected.length ? selected : ['valoracion', 'pases', 'precision_pases', 'regates', 'entradas'];
+    const avg = (key) => {
+      const vals = stats.map(s => s[key]).filter(v => v != null);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    };
+    const rLabels = rKeys.map(k => RADAR_LABELS[k] || k);
+    const rRaw = rKeys.map(k => avg(k));
+    const rData = rKeys.map((k, i) => Math.min(rRaw[i] / (RADAR_NORMALIZERS[k] || 10) * 10, 10));
+
+    new Chart(ctxRadar, {
+      type: 'radar',
+      data: {
+        labels: rLabels,
+        datasets: [{
+          label: playerName,
+          data: rData,
+          backgroundColor: 'rgba(0,195,255,0.15)',
+          borderColor: '#00c3ff',
+          borderWidth: 2,
+          pointBackgroundColor: '#00c3ff',
+          pointRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: textColor, font: { size: 11 } } },
+          title: { display: true, text: '🕸️ Perfil de stats', color: textColor, font: { size: 13 } }
+        },
+        scales: {
+          r: {
+            beginAtZero: true, max: 10,
+            ticks: { display: false, stepSize: 2 },
+            grid: { color: gridColor },
+            angleLines: { color: gridColor },
+            pointLabels: { color: textColor, font: { size: 10 } }
+          }
+        }
+      }
+    });
+
+  } catch (err) {
+    content.innerHTML = `<div class="empty-state"><span class="empty-icon">❌</span><p>Error: ${err.message}</p></div>`;
+  }
+}
+
+// Player tab navigation
+document.addEventListener('DOMContentLoaded', () => {
+  const backBtn = document.getElementById('btn-player-back');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      document.querySelector('.nav-btn.active')?.classList.remove('active');
+      document.querySelector('[data-tab="history"]')?.classList.add('active');
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-history').classList.add('active');
+      document.getElementById('nav-player').style.display = 'none';
+      loadMatchHistory();
+      initTimeline();
+    });
+  }
+
+  // Player tab nav button click
+  document.getElementById('nav-player')?.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-player').classList.add('active');
+  });
+});
 
 // ── Overlay ──
 function showOverlay(text, sub) {

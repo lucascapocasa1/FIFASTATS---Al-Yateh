@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FIFA Clubes Pro — Stats</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
@@ -19,6 +20,7 @@
         <button class="nav-btn" data-tab="dashboard">Dashboard</button>
         <button class="nav-btn" data-tab="ranking">Ranking</button>
         <button class="nav-btn" data-tab="history">Historial</button>
+        <button class="nav-btn" data-tab="player" id="nav-player" style="display:none">👤 Jugador</button>
       </nav>
       <button id="theme-toggle" class="theme-btn" title="Cambiar tema">☀️</button>
     </div>
@@ -49,6 +51,12 @@
           <input type="text" id="match-rival" class="match-input" placeholder="Rival (ej: vs SUB21)" />
           <input type="text" id="match-desc" class="match-input" placeholder="Descripción (ej: Fecha 1 - 2da Division)" />
           <input type="date" id="match-fecha" class="match-input match-date" />
+          <div class="match-result-input">
+            <label class="result-label">Resultado:</label>
+            <input type="number" id="match-gf" class="match-input score-input" min="0" value="0" placeholder="0" />
+            <span class="score-sep">-</span>
+            <input type="number" id="match-gc" class="match-input score-input" min="0" value="0" placeholder="0" />
+          </div>
         </div>
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btn-process">
@@ -116,6 +124,21 @@
             </select>
           </div>
         </div>
+        <div class="radar-stats-selector" id="radar-stats-selector" style="display:none">
+          <span class="dash-label">Stats para radar:</span>
+          <div class="radar-checks">
+            <label class="radar-check"><input type="checkbox" data-rkey="valoracion" checked /> Valoración</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="goles" /> Goles</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="asistencias" /> Asistencias</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="pases" checked /> Pases</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="precision_pases" checked /> Precisión %</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="regates" checked /> Regates</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="entradas" checked /> Entradas</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="tiros" /> Tiros</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="minutos_jugados" /> Minutos</label>
+            <label class="radar-check"><input type="checkbox" data-rkey="posesion_ganada" /> Posesión ganada</label>
+          </div>
+        </div>
         <div id="dash-chart-wrapper">
           <canvas id="dash-chart"></canvas>
         </div>
@@ -166,6 +189,22 @@
           <div class="empty-state">
             <span class="empty-icon">📊</span>
             <p>No hay datos guardados todavía.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== TAB: PLAYER ======== -->
+    <section class="tab" id="tab-player">
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title" id="player-title">👤 <span id="player-name-header"></span></h2>
+          <button class="btn btn-ghost" id="btn-player-back">← Volver</button>
+        </div>
+        <div id="player-content">
+          <div class="empty-state">
+            <span class="empty-icon">👤</span>
+            <p>Seleccioná un jugador para ver sus estadísticas</p>
           </div>
         </div>
       </div>
