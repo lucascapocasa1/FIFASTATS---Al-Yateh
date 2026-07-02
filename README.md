@@ -169,14 +169,14 @@ Deberías ver:
 
 ## 📝 Notas sobre el parseo
 
-Las estadísticas FIFA tienen formato **"equipo vs jugador"**:
+Las estadísticas FIFA tienen formato **"jugador vs equipo"**:
 ```
 Pases    13   206
 ```
-El sistema siempre toma el **segundo número** (el del jugador).
+El sistema siempre toma el **primer número** (el del jugador).
 
 Los porcentajes también:
 ```
 Precisión en los pases (%)    85   90
 ```
-→ Se guarda `90` (el del jugador).
+→ Se guarda `85` (el del jugador).

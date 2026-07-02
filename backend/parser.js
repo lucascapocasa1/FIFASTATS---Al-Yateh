@@ -9,52 +9,6 @@
  */
 
 /**
- * Extrae el nombre del jugador del texto OCR del panel izquierdo/superior.
- * El nombre suele estar debajo de la posición (ej: "MCI lucasyjoaqui 8.4")
- */
-function extractPlayerName(ocrText) {
-  const text = ocrText.toLowerCase();
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-  // Buscar líneas que contengan CR/calificación + nombre
-  // Patrón: posición + nombre + número (valoración)
-  const posiciones = ['po', 'pdc', 'dfc', 'dci', 'dd', 'di', 'mcd', 'mci', 'mc', 'md', 'mi', 'mcd', 'ext', 'sd', 'si', 'dc', 'glb', 'mor'];
-
-  for (const line of lines) {
-    const parts = line.split(/\s+/);
-    if (parts.length >= 2) {
-      // Buscar si hay una posición reconocible
-      const firstWord = parts[0].toLowerCase().replace(/[^a-z]/g, '');
-      if (posiciones.includes(firstWord) && parts.length >= 2) {
-        // El nombre sería el segundo token
-        const nombre = parts[1];
-        if (nombre && nombre.length > 2 && !/^\d/.test(nombre)) {
-          return nombre.toLowerCase();
-        }
-      }
-    }
-  }
-
-  // Fallback: buscar línea con calificación numérica tipo "8.4"
-  for (const line of lines) {
-    const match = line.match(/([a-záéíóúñ][a-záéíóúñ0-9_]{2,})\s+[\d.]+\s*$/i);
-    if (match) {
-      return match[1].toLowerCase();
-    }
-  }
-
-  // Buscar el texto más prominente que parezca un nombre de usuario
-  for (const line of lines) {
-    const match = line.match(/^([a-z][a-z0-9_]{3,20})\s*$/i);
-    if (match) {
-      return match[1].toLowerCase();
-    }
-  }
-
-  return null;
-}
-
-/**
  * Extrae un posible apodo/nombre del texto OCR del panel superior
  * Se filtra ruido conocido (posiciones, etiquetas) y se devuelve
  * el primer token que parezca un nombre de usuario o apodo.
@@ -359,4 +313,4 @@ function validateStats(stats) {
   };
 }
 
-module.exports = { parseStats, extractSelectedPlayer, extractPlayerName, validateStats, extractValoracion };
+module.exports = { parseStats, extractSelectedPlayer, validateStats, extractValoracion };

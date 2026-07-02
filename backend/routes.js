@@ -7,6 +7,53 @@ const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
 const { insertStats, createMatch, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
 
+const CONCURRENCY = 3;
+
+async function processSingleImage(file, index) {
+  const result = {
+    filename: file.originalname,
+    success: false,
+    data: null,
+    errors: [],
+    warnings: []
+  };
+
+  console.log(`[API] Procesando #${index}: ${file.originalname}, size: ${file.buffer.length}`);
+  try {
+    const imageBuffer = file.buffer;
+
+    const nameBuffer = await cropPlayerName(imageBuffer);
+    const nameOcrText = await runOCR(nameBuffer);
+
+    let playerName = extractSelectedPlayer(nameOcrText);
+    if (!playerName) playerName = 'desconocido';
+
+    result.ocr_debug = { name_text: nameOcrText.substring(0, 300) };
+
+    const statsBuffer = await cropStatsPanel(imageBuffer);
+    const statsOcrText = await runOCR(statsBuffer);
+
+    result.ocr_debug.stats_text = statsOcrText.substring(0, 800);
+
+    const stats = parseStats(statsOcrText, playerName, nameOcrText);
+
+    const validation = validateStats(stats);
+    if (!validation.valid) {
+      result.warnings = validation.errors;
+    }
+
+    result.success = true;
+    result.data = stats;
+    console.log(`[API] #${index} EXITOSO: ${stats.jugador}`);
+
+  } catch (err) {
+    result.errors.push(`Error: ${err.message}`);
+    console.error(`[API] Error #${index} ${file.originalname}:`, err);
+  }
+
+  return result;
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -27,70 +74,22 @@ router.post('/upload', upload.array('images', 30), async (req, res) => {
     return res.status(400).json({ error: 'No se enviaron imágenes' });
   }
 
-  // Ya no usamos apodo global — cada imagen detecta su propio jugador
+  const files = req.files;
   const results = [];
+  let nextIdx = 0;
 
-  for (let i = 0; i < req.files.length; i++) {
-    const file = req.files[i];
-    const result = {
-      filename: file.originalname,
-      success: false,
-      data: null,
-      errors: [],
-      warnings: []
-    };
-
-    console.log(`[API] Procesando #${i}: ${file.originalname}, size: ${file.buffer.length}`);
-    try {
-      const imageBuffer = file.buffer;
-
-      // 1. Recortar y hacer OCR del panel del nombre
-      console.log(`[API] #${i} Recortando nombre...`);
-      const nameBuffer = await cropPlayerName(imageBuffer);
-      console.log(`[API] #${i} OCR nombre (buffer: ${nameBuffer.length} bytes)...`);
-      const nameOcrText = await runOCR(nameBuffer);
-      console.log(`[API] #${i} Texto OCR nombre (${nameOcrText.length} chars): ${nameOcrText.substring(0, 100)}`);
-
-      // Detectar nombre del jugador automáticamente
-      let playerName = extractSelectedPlayer(nameOcrText);
-      console.log(`[API] #${i} Nombre detectado: "${playerName}"`);
-      if (!playerName) playerName = 'desconocido';
-
-      result.ocr_debug = result.ocr_debug || {};
-      result.ocr_debug.name_text = nameOcrText.substring(0, 300);
-
-      // 2. Recortar y hacer OCR del panel de stats
-      console.log(`[API] #${i} Recortando stats...`);
-      const statsBuffer = await cropStatsPanel(imageBuffer);
-      console.log(`[API] #${i} OCR stats (buffer: ${statsBuffer.length} bytes)...`);
-      const statsOcrText = await runOCR(statsBuffer);
-      console.log(`[API] #${i} Texto OCR stats (${statsOcrText.length} chars): ${statsOcrText.substring(0, 150)}`);
-
-      result.ocr_debug = result.ocr_debug || {};
-      result.ocr_debug.stats_text = statsOcrText.substring(0, 800);
-
-      // 3. Parsear
-      const stats = parseStats(statsOcrText, playerName, nameOcrText);
-      console.log(`[API] #${i} Stats parseados:`, JSON.stringify(stats));
-
-      // 4. Validar
-      const validation = validateStats(stats);
-      if (!validation.valid) {
-        console.log(`[API] #${i} Warnings de validación:`, validation.errors);
-        result.warnings = validation.errors;
-      }
-
-      result.success = true;
-      result.data = stats;
-      console.log(`[API] #${i} Resultado EXITOSO: ${stats.jugador}`);
-
-    } catch (err) {
-      result.errors.push(`Error procesando imagen: ${err.message}`);
-      console.error(`[API] Error en #${i} ${file.originalname}:`, err);
+  async function worker() {
+    while (nextIdx < files.length) {
+      const idx = nextIdx++;
+      results[idx] = await processSingleImage(files[idx], idx);
     }
-
-    results.push(result);
   }
+
+  const workers = Array(Math.min(CONCURRENCY, files.length))
+    .fill()
+    .map(() => worker());
+
+  await Promise.all(workers);
 
   console.log(`[API] Upload completado: ${results.filter(r=>r.success).length} exitosos, ${results.filter(r=>!r.success).length} fallidos`);
   res.json({
@@ -106,7 +105,7 @@ router.post('/upload', upload.array('images', 30), async (req, res) => {
  * Crea un nuevo partido.
  * Body: { rival, descripcion, fecha }
  */
-router.post('/match', express.json(), async (req, res) => {
+router.post('/match', async (req, res) => {
   try {
     const { rival, descripcion, fecha } = req.body;
     console.log('[API] POST /match - body:', { rival, descripcion, fecha });
@@ -174,7 +173,7 @@ router.delete('/match/:id', async (req, res) => {
  * Guarda un registro de estadísticas (individual, asociado a un match opcional).
  * Body: { stats: {...}, match_id: 123 }
  */
-router.post('/save', express.json(), async (req, res) => {
+router.post('/save', async (req, res) => {
   const { stats, match_id } = req.body;
   console.log('[API] POST /save - match_id:', match_id, 'jugador:', stats?.jugador);
 

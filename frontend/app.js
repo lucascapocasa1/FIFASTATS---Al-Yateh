@@ -1,4 +1,16 @@
 const API_URL = 'http://localhost:3001/api';
+const FETCH_TIMEOUT = 30000;
+
+async function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
 const state = {
   files: [],
@@ -207,10 +219,10 @@ async function processImages() {
     state.files.forEach(f => formData.append('images', f));
     console.log('[processImages] Enviando', state.files.length, 'imágenes al servidor...');
 
-    const response = await fetch(`${API_URL}/upload`, {
+    const response = await fetchWithTimeout(`${API_URL}/upload`, {
       method: 'POST',
       body: formData
-    });
+    }, 120000);
 
     if (!response.ok) {
       const err = await response.json();
@@ -285,15 +297,7 @@ function renderResults(data) {
 
   console.log('[renderResults] Elementos agregados al DOM:', list.children.length);
 
-  // Event delegation para inputs editables y botones guardar
   list.addEventListener('change', handleStatInputChange);
-  list.addEventListener('click', e => {
-    const btn = e.target.closest('.player-save-btn');
-    if (btn && !btn.classList.contains('btn-saved')) {
-      const idx = parseInt(btn.dataset.resultIdx);
-      savePlayer(idx);
-    }
-  });
 
   const successfulResults = data.results.filter(r => r.success && r.data);
   if (successfulResults.length > 0) {
@@ -378,16 +382,6 @@ function renderResultBody(result, idx) {
   }
   html += '</div>';
 
-  // Save button for this player
-  const savedClass = result._saved ? 'btn-saved' : '';
-  const savedText = result._saved ? '✅ Guardado' : '💾 Guardar';
-  html += `
-    <div class="player-save-row">
-      <button class="btn btn-success player-save-btn ${savedClass}"
-        data-result-idx="${idx}">${savedText}</button>
-    </div>
-  `;
-
   if (result.ocr_debug) {
     html += `
       <div class="ocr-debug">
@@ -402,10 +396,12 @@ function renderResultBody(result, idx) {
   return html;
 }
 
-// ── Save individual player ──
-async function savePlayer(idx) {
-  const result = state.results[idx];
-  if (!result || !result.data) return;
+// ── Save all players ──
+const SAVE_CONCURRENCY = 3;
+
+async function saveAllPlayers() {
+  const valid = state.results.filter(r => r.success && r.data && !r._saved);
+  if (!valid.length) { toast('Todos los jugadores ya están guardados', 'info'); return; }
 
   const rival = document.getElementById('match-rival').value.trim();
   const descripcion = document.getElementById('match-desc').value.trim();
@@ -414,44 +410,61 @@ async function savePlayer(idx) {
   if (!rival) { toast('Falta el nombre del rival', 'error'); return; }
   if (!fecha) { toast('Falta la fecha del partido', 'error'); return; }
 
-  showOverlay('Guardando...', result.data.jugador);
+  showOverlay('Guardando...', `0/${valid.length}`);
 
   try {
-    // 1. Get or create match
+    // 1. Crear el partido (una sola vez)
     let matchId = state._matchId;
     if (!matchId) {
-      const matchRes = await fetch(`${API_URL}/match`, {
+      const matchRes = await fetchWithTimeout(`${API_URL}/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rival, descripcion, fecha })
-      });
+      }, 10000);
       const matchData = await matchRes.json();
       if (!matchData.success) throw new Error('Error creando partido');
       matchId = matchData.id;
       state._matchId = matchId;
     }
 
-    // 2. Save player stats
-    const saveRes = await fetch(`${API_URL}/save`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stats: result.data, match_id: matchId })
-    });
+    // 2. Guardar jugadores en paralelo con límite de concurrencia
+    let savedCount = 0;
+    let hasError = false;
 
-    const saveData = await saveRes.json();
-    if (!saveRes.ok) throw new Error(saveData.error || 'Error guardando');
+    for (let i = 0; i < valid.length; i += SAVE_CONCURRENCY) {
+      const batch = valid.slice(i, i + SAVE_CONCURRENCY);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (r) => {
+          const idx = state.results.indexOf(r);
+          const saveRes = await fetchWithTimeout(`${API_URL}/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stats: r.data, match_id: matchId })
+          }, 15000);
+          const saveData = await saveRes.json();
+          if (!saveRes.ok) throw new Error(saveData.error || 'Error guardando');
+          r._saved = true;
+          r._savedId = saveData.id;
+        })
+      );
 
-    result._saved = true;
-    result._savedId = saveData.id;
+      for (const res of batchResults) {
+        if (res.status === 'fulfilled') {
+          savedCount++;
+        } else {
+          hasError = true;
+          console.error('[saveAllPlayers] Error:', res.reason);
+        }
+      }
 
-    // Update button UI
-    const btn = document.querySelector(`.player-save-btn[data-result-idx="${idx}"]`);
-    if (btn) {
-      btn.textContent = '✅ Guardado';
-      btn.classList.add('btn-saved');
+      document.getElementById('overlay-sub').textContent = `${savedCount}/${valid.length}`;
     }
 
-    toast(`✅ ${result.data.jugador} guardado`, 'success');
+    if (hasError) {
+      toast(`✅ ${savedCount} guardados, pero algunos fallaron`, 'warning');
+    } else {
+      toast(`✅ ${savedCount} jugador(es) guardado(s)`, 'success');
+    }
 
   } catch (err) {
     toast(`Error: ${err.message}`, 'error');
@@ -460,26 +473,13 @@ async function savePlayer(idx) {
   }
 }
 
-// ── Save all players ──
-async function saveAllPlayers() {
-  const valid = state.results.filter(r => r.success && r.data && !r._saved);
-  if (!valid.length) { toast('Todos los jugadores ya están guardados', 'info'); return; }
-
-  for (const r of valid) {
-    const idx = state.results.indexOf(r);
-    await savePlayer(idx);
-  }
-
-  toast(`✅ ${valid.length} jugador(es) guardado(s)`, 'success');
-}
-
 // ── Match History ──
 async function loadMatchHistory() {
   const container = document.getElementById('history-container');
   container.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando...</p></div>';
 
   try {
-    const response = await fetch(`${API_URL}/matches`);
+    const response = await fetchWithTimeout(`${API_URL}/matches`);
     const data = await response.json();
 
     const matches = data.data || [];
@@ -545,7 +545,7 @@ async function renderMatchHistory(matches, container) {
       const matchId = btn.dataset.matchId;
       if (!confirm('¿Eliminar este partido y todas sus estadísticas?')) return;
       try {
-        const res = await fetch(`${API_URL}/match/${matchId}`, { method: 'DELETE' });
+        const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`, { method: 'DELETE' });
         const data = await res.json();
         if (data.success) {
           toast('Partido eliminado', 'info');
@@ -578,7 +578,7 @@ async function renderMatchHistory(matches, container) {
         body.style.display = 'block';
 
         try {
-          const res = await fetch(`${API_URL}/match/${matchId}`);
+          const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`);
           const data = await res.json();
           if (data.data && data.data.stats) {
             renderMatchPlayers(list, data.data.stats);
@@ -650,7 +650,7 @@ async function loadDashboardPlayers() {
   const select = document.getElementById('dash-player');
   const currentValue = select.value;
   try {
-    const res = await fetch(`${API_URL}/players`);
+    const res = await fetchWithTimeout(`${API_URL}/players`);
     const data = await res.json();
     select.innerHTML = '<option value="">-- Seleccionar --</option>';
     if (data.data && data.data.length) {
@@ -662,12 +662,14 @@ async function loadDashboardPlayers() {
       });
     }
     if (currentValue) select.value = currentValue;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error cargando jugadores:', e);
+  }
 }
 
 async function loadDashboardPlayerStats(playerName) {
   try {
-    const res = await fetch(`${API_URL}/stats/player/${encodeURIComponent(playerName)}`);
+    const res = await fetchWithTimeout(`${API_URL}/stats/player/${encodeURIComponent(playerName)}`);
     const data = await res.json();
     if (!data.data || !data.data.length) {
       document.getElementById('dash-empty').style.display = 'block';
@@ -849,7 +851,7 @@ async function loadRanking() {
   container.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando ranking...</p></div>';
 
   try {
-    const res = await fetch(`${API_URL}/leaderboard`);
+    const res = await fetchWithTimeout(`${API_URL}/leaderboard`);
     const data = await res.json();
     rankingData = data.data || [];
 

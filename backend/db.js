@@ -63,13 +63,23 @@ async function getDB() {
   return db;
 }
 
+let writeQueue = Promise.resolve();
+
+function serialized(fn) {
+  return async function (...args) {
+    const result = writeQueue.then(() => fn(...args));
+    writeQueue = result.catch(() => {});
+    return result;
+  };
+}
+
 function saveDB() {
   if (!db) return;
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
-async function insertStats(stats, matchId = null) {
+async function _insertStats(stats, matchId = null) {
   console.log('[DB] insertStats - jugador:', stats?.jugador, 'matchId:', matchId);
   const db = await getDB();
   const fields = [
@@ -96,7 +106,7 @@ async function insertStats(stats, matchId = null) {
   return id;
 }
 
-async function createMatch(rival, descripcion, fecha) {
+async function _createMatch(rival, descripcion, fecha) {
   console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha);
   const db = await getDB();
   db.run(
@@ -143,13 +153,13 @@ async function getMatchStats(matchId) {
   return values;
 }
 
-async function deleteStats(id) {
+async function _deleteStats(id) {
   const db = await getDB();
   db.run('DELETE FROM stats WHERE id = ?', [id]);
   saveDB();
 }
 
-async function deleteMatch(matchId) {
+async function _deleteMatch(matchId) {
   const db = await getDB();
   db.run('DELETE FROM stats WHERE match_id = ?', [matchId]);
   db.run('DELETE FROM matches WHERE id = ?', [matchId]);
@@ -231,5 +241,10 @@ async function getAllStats() {
     return obj;
   });
 }
+
+const insertStats = serialized(_insertStats);
+const createMatch = serialized(_createMatch);
+const deleteStats = serialized(_deleteStats);
+const deleteMatch = serialized(_deleteMatch);
 
 module.exports = { getDB, insertStats, createMatch, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };

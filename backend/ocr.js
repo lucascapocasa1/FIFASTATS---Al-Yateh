@@ -1,33 +1,55 @@
 const { createWorker } = require('tesseract.js');
 
-let worker = null;
+const POOL_SIZE = 3;
+let pool = [];
+let ready = false;
 
-async function getWorker() {
-  if (worker) return worker;
+async function getPool() {
+  if (ready) return pool;
 
-  worker = await createWorker('spa', 1, {
-    logger: () => {} // silenciar logs
-  });
-
-  await worker.setParameters({
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,% áéíóúñÁÉÍÓÚÑ()',
-    preserve_interword_spaces: '1',
-  });
-
-  return worker;
+  for (let i = 0; i < POOL_SIZE; i++) {
+    const worker = await createWorker('spa', 1, {
+      logger: () => {}
+    });
+    await worker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,% áéíóúñÁÉÍÓÚÑ()',
+      preserve_interword_spaces: '1',
+    });
+    pool.push({ worker, inUse: false });
+  }
+  ready = true;
+  return pool;
 }
 
-async function runOCR(imageBuffer) {
-  const w = await getWorker();
-  const { data } = await w.recognize(imageBuffer);
-  return data.text;
-}
-
-async function terminateWorker() {
-  if (worker) {
-    await worker.terminate();
-    worker = null;
+async function acquireWorker() {
+  const p = await getPool();
+  while (true) {
+    for (const entry of p) {
+      if (!entry.inUse) {
+        entry.inUse = true;
+        return entry;
+      }
+    }
+    await new Promise(r => setTimeout(r, 50));
   }
 }
 
-module.exports = { runOCR, terminateWorker };
+async function runOCR(imageBuffer) {
+  const entry = await acquireWorker();
+  try {
+    const { data } = await entry.worker.recognize(imageBuffer);
+    return data.text;
+  } finally {
+    entry.inUse = false;
+  }
+}
+
+async function terminateWorkers() {
+  for (const entry of pool) {
+    await entry.worker.terminate();
+  }
+  pool = [];
+  ready = false;
+}
+
+module.exports = { runOCR, terminateWorkers };
