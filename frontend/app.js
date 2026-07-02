@@ -545,10 +545,12 @@ async function saveAllPlayers() {
     if (!matchId) {
       const goles_favor = parseInt(document.getElementById('match-gf').value) || 0;
       const goles_contra = parseInt(document.getElementById('match-gc').value) || 0;
+      const notas = document.getElementById('match-notas').value.trim();
+      const detalle_goles = document.getElementById('match-detalle-goles').value.trim();
       const matchRes = await fetchWithTimeout(`${API_URL}/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rival, descripcion, fecha, goles_favor, goles_contra, temporada })
+        body: JSON.stringify({ rival, descripcion, fecha, goles_favor, goles_contra, temporada, notas, detalle_goles })
       }, 10000);
       const matchData = await matchRes.json();
       if (!matchData.success) throw new Error('Error creando partido');
@@ -587,6 +589,21 @@ async function saveAllPlayers() {
       }
 
       document.getElementById('overlay-sub').textContent = `${savedCount}/${valid.length}`;
+    }
+
+    // 3. Upload match images if any
+    const imageInput = document.getElementById('match-images');
+    if (imageInput && imageInput.files.length > 0) {
+      const formData = new FormData();
+      for (const f of imageInput.files) formData.append('images', f);
+      try {
+        await fetchWithTimeout(`${API_URL}/match/${matchId}/images`, {
+          method: 'POST',
+          body: formData
+        }, 30000);
+      } catch (imgErr) {
+        console.error('Error subiendo imágenes:', imgErr);
+      }
     }
 
     if (hasError) {
@@ -838,10 +855,14 @@ function renderMatchPlayers(container, stats, matchId, matchInfo) {
   const editRow = document.createElement('div');
   editRow.className = 'match-edit-row';
   editRow.innerHTML = `
+    <button class="btn btn-sm btn-ghost btn-export-csv">📥 CSV</button>
     <button class="btn btn-sm btn-ghost btn-edit-match">✏️ Editar jugadores</button>
     <button class="btn btn-sm btn-ghost btn-edit-match-data">📋 Editar partido</button>
   `;
   container.appendChild(editRow);
+  editRow.querySelector('.btn-export-csv').addEventListener('click', () => {
+    exportMatchCSV(stats, matchInfo);
+  });
 
   editRow.querySelector('.btn-edit-match').addEventListener('click', () => {
     enterEditMode(container, stats, matchId, matchInfo);
@@ -924,9 +945,52 @@ function renderMatchReport(stats, mvpName, matchInfo) {
         </div>
       </div>
     </div>
+    ${matchInfo?.detalle_goles ? `
+    <div class="match-extra-section">
+      <div class="match-extra-title">⚽ Detalle de goles</div>
+      <div class="match-extra-text">${matchInfo.detalle_goles}</div>
+    </div>` : ''}
+    ${matchInfo?.notas ? `
+    <div class="match-extra-section">
+      <div class="match-extra-title">📝 Notas</div>
+      <div class="match-extra-text">${matchInfo.notas}</div>
+    </div>` : ''}
+    ${matchInfo?.imagenes ? renderImageGallery(matchInfo.imagenes, matchInfo.id) : ''}
   `;
 
   return div;
+}
+
+// ── Image Gallery ──
+const UPLOADS_URL = API_URL.replace('/api', '/uploads');
+
+function renderImageGallery(imagenesStr, matchId) {
+  const list = imagenesStr ? imagenesStr.split(',').filter(Boolean) : [];
+  if (!list.length) return '';
+  let html = '<div class="match-extra-section"><div class="match-extra-title">📸 Galería</div><div class="match-gallery">';
+  for (const fn of list) {
+    const src = `${UPLOADS_URL}/${fn}`;
+    html += `<div class="match-gallery-item">
+      <img src="${src}" alt="Foto del partido" loading="lazy" onclick="window.open('${src}','_blank')" />
+    </div>`;
+  }
+  html += '</div></div>';
+  return html;
+}
+
+async function uploadMatchImages(matchId) {
+  const input = document.getElementById('edit-match-images');
+  if (!input || !input.files.length) return;
+  const formData = new FormData();
+  for (const f of input.files) formData.append('images', f);
+  try {
+    await fetchWithTimeout(`${API_URL}/match/${matchId}/images`, {
+      method: 'POST', body: formData
+    }, 30000);
+    input.value = '';
+  } catch (err) {
+    toast('Error subiendo imágenes: ' + err.message, 'error');
+  }
 }
 
 function renderPitchView(stats, mvpName) {
@@ -1213,6 +1277,8 @@ function enterEditMatchMode(container, matchInfo, matchId) {
   const currentGf = matchInfo.goles_favor != null ? matchInfo.goles_favor : 0;
   const currentGc = matchInfo.goles_contra != null ? matchInfo.goles_contra : 0;
   const currentSeason = matchInfo.temporada || '';
+  const currentNotas = matchInfo.notas || '';
+  const currentDetalleGoles = matchInfo.detalle_goles || '';
 
   metaEl.innerHTML = `
     <div class="match-edit-meta">
@@ -1225,8 +1291,16 @@ function enterEditMatchMode(container, matchInfo, matchId) {
         <span class="score-sep">-</span>
         <input type="number" id="edit-match-gc" class="match-input score-input" min="0" value="${currentGc}" />
       </div>
-      <button class="btn btn-sm btn-success" id="btn-save-match-data">💾</button>
-      <button class="btn btn-sm btn-ghost" id="btn-cancel-match-data">✕</button>
+      <textarea id="edit-match-detalle-goles" class="match-textarea" placeholder="Detalle de goles..." rows="2">${currentDetalleGoles}</textarea>
+      <textarea id="edit-match-notas" class="match-textarea" placeholder="Notas / crónica..." rows="2">${currentNotas}</textarea>
+      <div style="margin-top:6px">
+        <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:2px">📸 Agregar imágenes:</label>
+        <input type="file" id="edit-match-images" accept="image/*" multiple style="font-size:12px" />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-sm btn-success" id="btn-save-match-data">💾</button>
+        <button class="btn btn-sm btn-ghost" id="btn-cancel-match-data">✕</button>
+      </div>
     </div>
   `;
 
@@ -1238,6 +1312,8 @@ function enterEditMatchMode(container, matchInfo, matchId) {
       descripcion: document.getElementById('edit-match-desc').value.trim(),
       goles_favor: parseInt(document.getElementById('edit-match-gf').value) || 0,
       goles_contra: parseInt(document.getElementById('edit-match-gc').value) || 0,
+      notas: document.getElementById('edit-match-notas').value.trim(),
+      detalle_goles: document.getElementById('edit-match-detalle-goles').value.trim(),
     };
     if (temporadaEl) body.temporada = temporadaEl.value;
     if (!body.rival || !body.fecha) { toast('Rival y fecha son obligatorios', 'error'); return; }
@@ -1250,6 +1326,7 @@ function enterEditMatchMode(container, matchInfo, matchId) {
       const data = await res.json();
       if (data.success) {
         toast('Partido actualizado', 'success');
+        await uploadMatchImages(matchId);
         // Reload match data
         const r2 = await fetchWithTimeout(`${API_URL}/match/${matchId}`);
         const d2 = await r2.json();
@@ -1273,6 +1350,161 @@ function enterEditMatchMode(container, matchInfo, matchId) {
 
 // Keep stats cache for cancel edit match data
 const statsCache = [];
+
+// ── Export CSV ──
+function downloadCSV(data, filename) {
+  if (!data.length) return;
+  const headers = Object.keys(data[0]);
+  const escape = (v) => {
+    if (v == null) return '';
+    const s = String(v);
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [
+    headers.join(','),
+    ...data.map(row => headers.map(h => escape(row[h])).join(','))
+  ];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportMatchCSV(stats, matchInfo) {
+  const csvData = stats.map(s => ({
+    Jugador: s.jugador,
+    Posición: s.posicion || '',
+    Valoración: s.valoracion ?? '',
+    Goles: s.goles ?? '',
+    Asistencias: s.asistencias ?? '',
+    Tiros: s.tiros ?? '',
+    'Prec. Tiros %': s.precision_tiros ?? '',
+    Pases: s.pases ?? '',
+    'Prec. Pases %': s.precision_pases ?? '',
+    Regates: s.regates ?? '',
+    'Éxito Regates %': s.exito_regates ?? '',
+    Entradas: s.entradas ?? '',
+    'Éxito Entradas %': s.exito_entradas ?? '',
+    Faltas: s.faltas ?? '',
+    'Pos. Ganada': s.posesion_ganada ?? '',
+    'Pos. Perdida': s.posesion_perdida ?? '',
+    Minutos: s.minutos_jugados ?? '',
+    'Dist. km': s.distancia_recorrida_km ?? '',
+    'Sprint km': s.distancia_sprint_km ?? '',
+    'MVP IG': s.mvp_ig ? 'Sí' : '',
+    'PART IG': s.part_ig ? 'Sí' : '',
+  }));
+  const rival = matchInfo?.rival || 'partido';
+  const fecha = matchInfo?.fecha || '';
+  downloadCSV(csvData, `fifa_stats_${rival}_${fecha}.csv`);
+}
+
+function exportPlayerCSV(stats) {
+  if (!stats.length) return;
+  const csvData = stats.map(s => ({
+    Fecha: s.match_fecha || s.fecha || '',
+    Rival: s.rival || '',
+    Posición: s.posicion || '',
+    Valoración: s.valoracion ?? '',
+    Goles: s.goles ?? '',
+    Asistencias: s.asistencias ?? '',
+    Tiros: s.tiros ?? '',
+    'Prec. Tiros %': s.precision_tiros ?? '',
+    Pases: s.pases ?? '',
+    'Prec. Pases %': s.precision_pases ?? '',
+    Regates: s.regates ?? '',
+    'Éxito Regates %': s.exito_regates ?? '',
+    Entradas: s.entradas ?? '',
+    'Éxito Entradas %': s.exito_entradas ?? '',
+    Faltas: s.faltas ?? '',
+    'Pos. Ganada': s.posesion_ganada ?? '',
+    'Pos. Perdida': s.posesion_perdida ?? '',
+    Minutos: s.minutos_jugados ?? '',
+    'Dist. km': s.distancia_recorrida_km ?? '',
+    'Sprint km': s.distancia_sprint_km ?? '',
+    'MVP IG': s.mvp_ig ? 'Sí' : '',
+    'PART IG': s.part_ig ? 'Sí' : '',
+  }));
+  downloadCSV(csvData, `fifa_stats_${stats[0].jugador}.csv`);
+}
+
+function calcPlayerAverages(stats) {
+  const sum = (key) => {
+    const vals = stats.map(s => s[key]).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  };
+  return {
+    valoracion: sum('valoracion'),
+    goles: sum('goles'),
+    asistencias: sum('asistencias'),
+    pases: sum('pases'),
+    precision_pases: sum('precision_pases'),
+    tiros: sum('tiros'),
+    precision_tiros: sum('precision_tiros'),
+    regates: sum('regates'),
+    exito_regates: sum('exito_regates'),
+    entradas: sum('entradas'),
+    exito_entradas: sum('exito_entradas'),
+    faltas: sum('faltas'),
+    posesion_ganada: sum('posesion_ganada'),
+    posesion_perdida: sum('posesion_perdida'),
+    minutos_jugados: sum('minutos_jugados'),
+    distancia_recorrida_km: sum('distancia_recorrida_km'),
+    distancia_sprint_km: sum('distancia_sprint_km'),
+    n: stats.length,
+    mvp_ig: stats.filter(s => s.mvp_ig).length,
+    part_ig: stats.filter(s => s.part_ig).length,
+  };
+}
+
+function renderCompareTable(name1, name2, avg1, avg2) {
+  const rows = [
+    { label: '⭐ Valoración', k: 'valoracion', f: v => v.toFixed(2) },
+    { label: '⚽ Goles/p', k: 'goles', f: v => v.toFixed(2) },
+    { label: '🎯 Asistencias/p', k: 'asistencias', f: v => v.toFixed(2) },
+    { label: '↗ Pases/p', k: 'pases', f: v => v.toFixed(1) },
+    { label: '✅ Prec. Pases %', k: 'precision_pases', f: v => v.toFixed(1) },
+    { label: '🎯 Tiros/p', k: 'tiros', f: v => v.toFixed(1) },
+    { label: '🎯 Prec. Tiros %', k: 'precision_tiros', f: v => v.toFixed(1) },
+    { label: '🪄 Regates/p', k: 'regates', f: v => v.toFixed(1) },
+    { label: '💪 Éxito Regates %', k: 'exito_regates', f: v => v.toFixed(1) },
+    { label: '🛡 Entradas/p', k: 'entradas', f: v => v.toFixed(1) },
+    { label: '💪 Éxito Entradas %', k: 'exito_entradas', f: v => v.toFixed(1) },
+    { label: '🟨 Faltas/p', k: 'faltas', f: v => v.toFixed(1) },
+    { label: '📈 Pos. Ganada/p', k: 'posesion_ganada', f: v => v.toFixed(1) },
+    { label: '📉 Pos. Perdida/p', k: 'posesion_perdida', f: v => v.toFixed(1), lowerIsBetter: true },
+    { label: '⏱ Minutos/p', k: 'minutos_jugados', f: v => v.toFixed(0) },
+    { label: '🏃 Dist. km/p', k: 'distancia_recorrida_km', f: v => v.toFixed(1) },
+    { label: '💨 Sprint km/p', k: 'distancia_sprint_km', f: v => v.toFixed(2) },
+    { label: '📸 Partidos', k: 'n', f: v => v.toFixed(0) },
+    { label: '🏆 MVP IG', k: 'mvp_ig', f: v => v.toFixed(0) },
+    { label: '📸 PART IG', k: 'part_ig', f: v => v.toFixed(0) },
+  ];
+
+  const winnerIcon = (v1, v2, lowerIsBetter) => {
+    if (v1 == null || v2 == null) return ['', ''];
+    if (v1 === v2) return ['', ''];
+    const better = lowerIsBetter ? v1 < v2 : v1 > v2;
+    return better ? ['🏆', ''] : ['', '🏆'];
+  };
+
+  let html = '<div class="card"><h2 class="card-title">📊 Comparativa: ' + name1 + ' vs ' + name2 + '</h2>';
+  html += '<div class="compare-table-wrapper"><table class="compare-table">';
+  html += '<thead><tr><th>Estadística</th><th>' + name1 + '</th><th>' + name2 + '</th></tr></thead><tbody>';
+  for (const r of rows) {
+    const v1 = avg1[r.k] ?? 0;
+    const v2 = avg2[r.k] ?? 0;
+    const [w1, w2] = winnerIcon(v1, v2, r.lowerIsBetter);
+    html += '<tr>'
+      + '<td class="compare-label">' + r.label + '</td>'
+      + '<td class="compare-val">' + w1 + ' ' + r.f(v1) + '</td>'
+      + '<td class="compare-val">' + w2 + ' ' + r.f(v2) + '</td>'
+      + '</tr>';
+  }
+  html += '</tbody></table></div></div>';
+  return html;
+}
 
 // ── Dashboard ──
 let compareMode = false;
@@ -1376,6 +1608,17 @@ async function loadDashboardPlayerStats(playerName, playerName2) {
         updateChart(stats1, statKey);
         updateSummary(stats1, statKey);
       }
+    }
+
+    // Comparison table (only in compare mode)
+    const compTable = document.getElementById('dash-comparison-table');
+    if (playerName2 && stats2.length) {
+      compTable.style.display = 'block';
+      const totals1 = calcPlayerAverages(stats1);
+      const totals2 = calcPlayerAverages(stats2);
+      compTable.innerHTML = renderCompareTable(playerName, playerName2, totals1, totals2);
+    } else {
+      compTable.style.display = 'none';
     }
   } catch (err) {
     toast('Error cargando datos del jugador: ' + err.message, 'error');
@@ -2454,6 +2697,10 @@ async function loadPlayerData(playerName) {
       </div>
     `;
 
+    html += `<div style="text-align:right;margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" id="btn-export-player-csv">📥 Exportar CSV</button>
+    </div>`;
+
     // Charts side by side
     html += `<div class="player-chart-row">
       <div class="chart-box"><canvas id="player-chart-line"></canvas></div>
@@ -2490,6 +2737,10 @@ async function loadPlayerData(playerName) {
     html += '</tbody></table></div>';
 
     content.innerHTML = html;
+
+    document.getElementById('btn-export-player-csv')?.addEventListener('click', () => {
+      exportPlayerCSV(stats);
+    });
 
     // Charts
     const ctxLine = document.getElementById('player-chart-line').getContext('2d');

@@ -1,11 +1,33 @@
 const express = require('express');
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const router = express.Router();
 
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats, normalizePlayerName } = require('./parser');
-const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary } = require('./db');
+const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary, addMatchImage, removeMatchImage } = require('./db');
+
+// ── Image uploads for match gallery ──
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      const name = Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext;
+      cb(null, name);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Solo se aceptan imágenes'));
+  }
+});
 
 const CONCURRENCY = 3;
 
@@ -108,13 +130,13 @@ router.post('/upload', upload.array('images', 30), async (req, res) => {
  */
 router.post('/match', async (req, res) => {
   try {
-    const { rival, descripcion, fecha, goles_favor, goles_contra, temporada } = req.body;
+    const { rival, descripcion, fecha, goles_favor, goles_contra, temporada, notas, detalle_goles } = req.body;
     console.log('[API] POST /match - body:', { rival, descripcion, fecha, goles_favor, goles_contra, temporada });
     if (!rival || !fecha) {
       console.log('[API] POST /match - Campos faltantes');
       return res.status(400).json({ error: 'Faltan campos requeridos: rival, fecha' });
     }
-    const id = await createMatch(rival, descripcion, fecha, goles_favor || 0, goles_contra || 0, temporada || '');
+    const id = await createMatch(rival, descripcion, fecha, goles_favor || 0, goles_contra || 0, temporada || '', notas || '', detalle_goles || '');
     console.log('[API] POST /match - Creado con id:', id);
     res.json({ success: true, id });
   } catch (err) {
@@ -313,6 +335,41 @@ router.get('/seasons', async (req, res) => {
   try {
     const seasons = await getSeasons();
     res.json({ data: seasons });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /match/:id/images
+ * Upload images for a match gallery
+ */
+router.post('/match/:id/images', imageUpload.array('images', 20), async (req, res) => {
+  try {
+    const matchId = parseInt(req.params.id);
+    const match = await getMatchById(matchId);
+    if (!match) return res.status(404).json({ error: 'Partido no encontrado' });
+    if (!req.files || !req.files.length) return res.status(400).json({ error: 'No se enviaron imágenes' });
+    const filenames = req.files.map(f => f.filename);
+    for (const fn of filenames) await addMatchImage(matchId, fn);
+    res.json({ success: true, filenames });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /match/:id/images/:filename
+ * Remove an image from a match gallery
+ */
+router.delete('/match/:id/images/:filename', async (req, res) => {
+  try {
+    const matchId = parseInt(req.params.id);
+    const filename = req.params.filename;
+    const filepath = path.join(UPLOADS_DIR, filename);
+    if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+    await removeMatchImage(matchId, filename);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -64,6 +64,9 @@ async function getDB() {
   try { db.run("ALTER TABLE matches ADD COLUMN goles_contra INTEGER DEFAULT 0"); } catch (e) {}
   // Season column
   try { db.run("ALTER TABLE matches ADD COLUMN temporada TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN notas TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN detalle_goles TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN imagenes TEXT DEFAULT ''"); } catch (e) {}
   // Instagram fields
   try { db.run("ALTER TABLE stats ADD COLUMN mvp_ig INTEGER DEFAULT 0"); } catch (e) {}
   try { db.run("ALTER TABLE stats ADD COLUMN part_ig INTEGER DEFAULT 0"); } catch (e) {}
@@ -116,12 +119,12 @@ async function _insertStats(stats, matchId = null) {
   return id;
 }
 
-async function _createMatch(rival, descripcion, fecha, golesFavor = 0, golesContra = 0, temporada = '') {
-  console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha, 'gf:', golesFavor, 'gc:', golesContra, 'temporada:', temporada);
+async function _createMatch(rival, descripcion, fecha, golesFavor = 0, golesContra = 0, temporada = '', notas = '', detalleGoles = '') {
+  console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha);
   const db = await getDB();
   db.run(
-    'INSERT INTO matches (rival, descripcion, fecha, goles_favor, goles_contra, temporada) VALUES (?, ?, ?, ?, ?, ?)',
-    [rival, descripcion || '', fecha, golesFavor, golesContra, temporada]
+    'INSERT INTO matches (rival, descripcion, fecha, goles_favor, goles_contra, temporada, notas, detalle_goles) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [rival, descripcion || '', fecha, golesFavor, golesContra, temporada, notas, detalleGoles]
   );
   const result = db.exec('SELECT MAX(id) as id FROM matches');
   const id = result[0]?.values[0][0];
@@ -209,7 +212,7 @@ async function _deleteStats(id) {
 async function _updateMatch(id, data) {
   console.log('[DB] updateMatch - id:', id, 'data:', JSON.stringify(data));
   const db = await getDB();
-  const allowed = ['rival', 'descripcion', 'fecha', 'goles_favor', 'goles_contra', 'temporada'];
+  const allowed = ['rival', 'descripcion', 'fecha', 'goles_favor', 'goles_contra', 'temporada', 'notas', 'detalle_goles'];
   const sets = allowed.filter(f => f in data).map(f => `${f} = ?`);
   const values = allowed.filter(f => f in data).map(f => data[f]);
   if (!sets.length) throw new Error('No hay campos para actualizar');
@@ -363,11 +366,34 @@ async function getAllStats() {
   });
 }
 
+async function _addMatchImage(matchId, filename) {
+  const db = await getDB();
+  const match = await getMatchById(matchId);
+  if (!match) throw new Error('Partido no encontrado');
+  const existing = match.imagenes || '';
+  const list = existing ? existing.split(',').filter(Boolean) : [];
+  if (!list.includes(filename)) list.push(filename);
+  db.run('UPDATE matches SET imagenes = ? WHERE id = ?', [list.join(','), matchId]);
+  saveDB();
+}
+
+async function _removeMatchImage(matchId, filename) {
+  const db = await getDB();
+  const match = await getMatchById(matchId);
+  if (!match) throw new Error('Partido no encontrado');
+  const existing = match.imagenes || '';
+  const list = existing.split(',').filter(Boolean).filter(f => f !== filename);
+  db.run('UPDATE matches SET imagenes = ? WHERE id = ?', [list.join(','), matchId]);
+  saveDB();
+}
+
 const insertStats = serialized(_insertStats);
 const createMatch = serialized(_createMatch);
 const updateStats = serialized(_updateStats);
 const updateMatch = serialized(_updateMatch);
 const deleteStats = serialized(_deleteStats);
 const deleteMatch = serialized(_deleteMatch);
+const addMatchImage = serialized(_addMatchImage);
+const removeMatchImage = serialized(_removeMatchImage);
 
-module.exports = { getDB, insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary };
+module.exports = { getDB, insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary, addMatchImage, removeMatchImage };

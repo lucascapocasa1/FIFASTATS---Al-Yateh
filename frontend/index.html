@@ -111,6 +111,15 @@
             <span class="score-sep">-</span>
             <input type="number" id="match-gc" class="match-input score-input" min="0" value="0" placeholder="0" />
           </div>
+          <details class="match-details">
+            <summary style="cursor:pointer;font-size:13px;color:var(--text-muted);padding:4px 0">📝 Más detalles</summary>
+            <textarea id="match-notas" class="match-textarea" placeholder="Notas / crónica del partido..." rows="2"></textarea>
+            <textarea id="match-detalle-goles" class="match-textarea" placeholder="Detalle de goles (ej: 1-0 Lucas, 2-0 Nacho, 2-1 rival)..." rows="2"></textarea>
+            <div style="margin-top:8px">
+              <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">📸 Imágenes del partido (opcional):</label>
+              <input type="file" id="match-images" accept="image/*" multiple />
+            </div>
+          </details>
         </div>
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btn-process">
@@ -210,6 +219,7 @@
         <div id="dash-chart-wrapper">
           <canvas id="dash-chart"></canvas>
         </div>
+        <div id="dash-comparison-table" style="display:none"></div>
         <div id="dash-empty" class="empty-state">
           <span class="empty-icon">📊</span>
           <p>Seleccioná un jugador para ver su evolución</p>
