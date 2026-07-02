@@ -201,6 +201,27 @@ async function _deleteMatch(matchId) {
   saveDB();
 }
 
+async function getMatchesSummary() {
+  const db = await getDB();
+  const result = db.exec(`
+    SELECT
+      m.id, m.rival, m.descripcion, m.fecha, m.created_at,
+      COUNT(s.id) as jugadores,
+      ROUND(AVG(s.valoracion), 1) as avg_valoracion
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    GROUP BY m.id
+    ORDER BY m.fecha ASC
+  `);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
 async function getLeaderboard() {
   const db = await getDB();
   const result = db.exec(`
@@ -283,4 +304,4 @@ const updateStats = serialized(_updateStats);
 const deleteStats = serialized(_deleteStats);
 const deleteMatch = serialized(_deleteMatch);
 
-module.exports = { getDB, insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };
+module.exports = { getDB, insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };

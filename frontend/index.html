@@ -82,12 +82,20 @@
         </div>
         <div class="dash-controls">
           <div class="dash-control-group">
+            <label class="dash-label">Tipo:</label>
+            <div class="chart-type-toggle" id="chart-type-toggle">
+              <button class="chart-type-btn active" data-chart="line">📈 Evolución</button>
+              <button class="chart-type-btn" data-chart="radar">🕸️ Perfil</button>
+              <button class="chart-type-btn" data-chart="bar">📊 Comparación</button>
+            </div>
+          </div>
+          <div class="dash-control-group" id="dash-player-group">
             <label for="dash-player" class="dash-label">Jugador:</label>
             <select id="dash-player" class="dash-select">
               <option value="">-- Seleccionar --</option>
             </select>
           </div>
-          <div class="dash-control-group">
+          <div class="dash-control-group" id="dash-stat-group">
             <label for="dash-stat" class="dash-label">Estadística:</label>
             <select id="dash-stat" class="dash-select">
               <option value="valoracion">Valoración</option>
@@ -145,6 +153,10 @@
         <div class="card-header-row">
           <h2 class="card-title">Historial de partidos</h2>
           <button class="btn btn-ghost" id="btn-refresh">↺ Actualizar</button>
+        </div>
+        <div class="season-timeline" id="season-timeline" style="display:none">
+          <div class="timeline-label">⏱ Temporada</div>
+          <div class="timeline-scroll" id="timeline-scroll"></div>
         </div>
         <div class="history-search-row">
           <span class="search-icon">🔍</span>

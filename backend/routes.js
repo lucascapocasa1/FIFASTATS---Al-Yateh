@@ -5,7 +5,7 @@ const router = express.Router();
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
-const { insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
+const { insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
 
 const CONCURRENCY = 3;
 
@@ -130,6 +130,19 @@ router.get('/matches', async (req, res) => {
   try {
     const matches = await getMatches();
     res.json({ data: matches });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /matches/summary
+ * Lista todos los partidos con valoracion promedio.
+ */
+router.get('/matches/summary', async (req, res) => {
+  try {
+    const summary = await getMatchesSummary();
+    res.json({ data: summary });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

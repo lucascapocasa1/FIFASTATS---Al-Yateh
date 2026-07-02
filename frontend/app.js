@@ -44,8 +44,10 @@ document.addEventListener('DOMContentLoaded', () => {
   initButtons();
   initTheme();
   initDashboard();
+  initDashboardChartType();
   initRanking();
   loadMatchHistory();
+  initTimeline();
   setDefaultDate();
 });
 
@@ -62,7 +64,7 @@ function initTabs() {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(`tab-${tab}`).classList.add('active');
-      if (tab === 'history') loadMatchHistory();
+      if (tab === 'history') { loadMatchHistory(); initTimeline(); }
       if (tab === 'dashboard') {
         const sel = document.getElementById('dash-player');
         if (sel.value) loadDashboardPlayerStats(sel.value);
@@ -673,7 +675,7 @@ async function renderMatchHistory(matches, container) {
           const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`);
           const data = await res.json();
           if (data.data && data.data.stats) {
-            renderMatchPlayers(list, data.data.stats, matchId);
+            renderMatchPlayers(list, data.data.stats, matchId, data.data);
           } else {
             list.innerHTML = '<div class="empty-state"><p>Sin datos</p></div>';
           }
@@ -699,7 +701,7 @@ const HISTORY_STAT_FIELDS = [
   { key: 'entradas', label: 'Entr.', type: 'number', step: 1, min: 0 },
 ];
 
-function renderMatchPlayers(container, stats, matchId) {
+function renderMatchPlayers(container, stats, matchId, matchInfo) {
   if (!stats.length) {
     container.innerHTML = '<div class="empty-state"><p>Sin jugadores en este partido</p></div>';
     return;
@@ -717,16 +719,14 @@ function renderMatchPlayers(container, stats, matchId) {
 
   container.innerHTML = '';
 
-  // Pitch view
-  const pitchHtml = renderPitchView(stats, mvpName);
-  const pitchDiv = document.createElement('div');
-  pitchDiv.innerHTML = pitchHtml;
-  container.appendChild(pitchDiv.firstElementChild);
+  // Match Report (pitch + facts)
+  const report = renderMatchReport(stats, mvpName, matchInfo);
+  container.appendChild(report);
 
   // Stats table
   const table = document.createElement('div');
   table.className = 'match-stats-table';
-  table.innerHTML = buildMatchTable(stats);
+  table.innerHTML = buildMatchTable(stats, mvpName);
   container.appendChild(table);
 
   const editRow = document.createElement('div');
@@ -735,73 +735,177 @@ function renderMatchPlayers(container, stats, matchId) {
   container.appendChild(editRow);
 
   editRow.querySelector('.btn-edit-match').addEventListener('click', () => {
-    enterEditMode(container, stats, matchId);
+    enterEditMode(container, stats, matchId, matchInfo);
   });
 }
 
+function renderMatchReport(stats, mvpName, matchInfo) {
+  const div = document.createElement('div');
+  div.className = 'match-report';
+
+  const mvpPlayer = stats.find(s => s.jugador === mvpName);
+
+  // Compute highlights
+  const topGoleador = stats.reduce((best, s) => (s.goles || 0) > ((best && best.goles) || 0) ? s : best, null);
+  const topAsistente = stats.reduce((best, s) => (s.asistencias || 0) > ((best && best.asistencias) || 0) ? s : best, null);
+  const topPases = stats.reduce((best, s) => (s.pases || 0) > ((best && best.pases) || 0) ? s : best, null);
+  const avgVal = stats.reduce((sum, s) => sum + (s.valoracion || 0), 0) / stats.length;
+
+  const fecha = matchInfo && matchInfo.fecha ? new Date(matchInfo.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+
+  div.innerHTML = `
+    <div class="match-report-header">
+      <div class="match-report-title">⚽ Resumen del Partido</div>
+      <div class="match-report-meta">
+        <span>🆚 ${matchInfo && matchInfo.rival ? matchInfo.rival : '—'}</span>
+        <span>📅 ${fecha}</span>
+        <span>👥 ${stats.length} jug.</span>
+      </div>
+    </div>
+    <div class="match-report-body">
+      <div class="match-report-pitch">
+        ${renderPitchView(stats, mvpName)}
+      </div>
+      <div class="match-report-facts">
+        <div class="match-report-fact fact-mvp">
+          <div class="fact-label">🏆 MVP</div>
+          <div class="fact-value">${mvpPlayer ? mvpPlayer.jugador : '—'}</div>
+          <div class="fact-sub">⭐ ${mvpPlayer && mvpPlayer.valoracion != null ? mvpPlayer.valoracion.toFixed(1) : '—'}</div>
+        </div>
+        <div class="match-report-fact">
+          <div class="fact-label">⚽ Máx. Goleador</div>
+          <div class="fact-value">${topGoleador && topGoleador.goles ? topGoleador.jugador : '—'}</div>
+          <div class="fact-sub">${topGoleador ? (topGoleador.goles || 0) + ' gol' + (topGoleador.goles !== 1 ? 'es' : '') : ''}</div>
+        </div>
+        <div class="match-report-fact">
+          <div class="fact-label">🎯 Máx. Asistente</div>
+          <div class="fact-value">${topAsistente && topAsistente.asistencias ? topAsistente.jugador : '—'}</div>
+          <div class="fact-sub">${topAsistente ? (topAsistente.asistencias || 0) + ' asist.' : ''}</div>
+        </div>
+        <div class="match-report-fact">
+          <div class="fact-label">↗ Más Pases</div>
+          <div class="fact-value">${topPases && topPases.pases ? topPases.jugador : '—'}</div>
+          <div class="fact-sub">${topPases ? (topPases.pases || 0) + ' pases' : ''}</div>
+        </div>
+        <div class="match-report-fact">
+          <div class="fact-label">⭐ Prom. Valoración</div>
+          <div class="fact-value">${avgVal ? avgVal.toFixed(1) : '—'}</div>
+          <div class="fact-sub">${stats.length} jugadores</div>
+        </div>
+        <div class="match-report-fact">
+          <div class="fact-label">🏟️ Formación</div>
+          <div class="fact-value">3-1-4-2</div>
+          <div class="fact-sub">${stats.filter(s => s.posicion).length}/${stats.length} con posición</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  return div;
+}
+
 function renderPitchView(stats, mvpName) {
-  const gridPos = {
-    GK:  { row: 5, col: 3 },
-    DFCI: { row: 4, col: 2 },
-    DFC:  { row: 4, col: 3 },
-    DFCD: { row: 4, col: 4 },
-    MCD:  { row: 3, col: 3 },
-    MI:   { row: 2, col: 1 },
-    MCI:  { row: 2, col: 2 },
-    MCR:  { row: 2, col: 4 },
-    MD:   { row: 2, col: 5 },
-    DC:   { row: 1, col: 2 },
+  // Position coordinates for 3-1-4-2 on a 500x750 pitch
+  const playerPos = {
+    GK:  { x: 250, y: 680 },
+    DFCI: { x: 110, y: 570 },
+    DFC:  { x: 250, y: 570 },
+    DFCD: { x: 390, y: 570 },
+    MCD:  { x: 250, y: 450 },
+    MI:   { x: 75,  y: 330 },
+    MCI:  { x: 170, y: 330 },
+    MCR:  { x: 330, y: 330 },
+    MD:   { x: 425, y: 330 },
+    DC:   { x: 0,   y: 0 }, // handled specially
   };
 
-  // Build grid cells: 5 rows x 5 cols
-  const grid = Array.from({ length: 5 }, () => Array(5).fill(null));
-
   let dcCount = 0;
+  const markers = [];
   const unplaced = [];
 
   for (const s of stats) {
     const pos = s.posicion || '';
+    let x, y;
     if (pos === 'DC') {
       dcCount++;
-      const col = dcCount === 1 ? 2 : 4;
-      const row = 1;
-      grid[row - 1][col - 1] = { ...s, _mvp: s.jugador === mvpName };
-    } else if (gridPos[pos]) {
-      const { row, col } = gridPos[pos];
-      grid[row - 1][col - 1] = { ...s, _mvp: s.jugador === mvpName };
+      x = dcCount === 1 ? 170 : 330;
+      y = 200;
+    } else if (playerPos[pos]) {
+      x = playerPos[pos].x;
+      y = playerPos[pos].y;
     } else {
       unplaced.push(s);
+      continue;
     }
+    markers.push({ ...s, x, y, isMvp: s.jugador === mvpName });
   }
 
-  let html = '<div class="pitch-container"><div class="pitch">';
-  html += '<div class="pitch-lines">';
-  html += '<div class="pitch-center-circle"></div>';
-  html += '<div class="pitch-center-line"></div>';
-  html += '<div class="pitch-penalty-top"></div>';
-  html += '<div class="pitch-penalty-bottom"></div>';
-  html += '</div>';
+  const ratingColor = (val) => {
+    if (val == null) return { fill: 'rgba(128,128,128,0.25)', stroke: '#808080' };
+    if (val >= 7.5) return { fill: 'rgba(0,230,118,0.25)', stroke: '#00e676' };
+    if (val >= 6.0) return { fill: 'rgba(255,214,0,0.25)', stroke: '#ffd600' };
+    return { fill: 'rgba(255,68,68,0.25)', stroke: '#ff4444' };
+  };
 
-  html += '<div class="pitch-grid">';
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 5; c++) {
-      const p = grid[r][c];
-      if (p) {
-        const valClass = p.valoracion >= 7.5 ? 'high' : p.valoracion >= 6 ? 'mid' : 'low';
-        html += `<div class="pitch-cell" style="grid-row:${r+1};grid-column:${c+1}">`;
-        html += `<div class="pitch-player ${p._mvp ? 'mvp' : ''}">`;
-        html += `<div class="pitch-player-name">${p.jugador || '?'}</div>`;
-        html += `<div class="pitch-player-val ${valClass}">${p.valoracion != null ? p.valoracion.toFixed(1) : '—'}</div>`;
-        if (p._mvp) html += '<div class="pitch-mvp-badge">MVP</div>';
-        html += '</div></div>';
-      } else {
-        html += `<div class="pitch-cell empty" style="grid-row:${r+1};grid-column:${c+1}"></div>`;
-      }
+  let svg = `<svg class="pitch-svg" viewBox="0 0 500 750" xmlns="http://www.w3.org/2000/svg">`;
+
+  // MVP glow filter (must be before usage)
+  svg += `<defs>`;
+  svg += `<filter id="mvpGlow" x="-50%" y="-50%" width="200%" height="200%">`;
+  svg += `<feGaussianBlur in="SourceAlpha" stdDeviation="4"/>`;
+  svg += `<feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>`;
+  svg += `</filter>`;
+  svg += `</defs>`;
+
+  // Field background
+  svg += `<rect width="500" height="750" fill="#1b6b2e" rx="8"/>`;
+
+  // Field markings
+  svg += `<g stroke="rgba(255,255,255,0.40)" fill="none" stroke-width="1.5">`;
+  svg += `<rect x="15" y="15" width="470" height="720" rx="2"/>`;
+  svg += `<line x1="15" y1="375" x2="485" y2="375"/>`;
+  svg += `<circle cx="250" cy="375" r="50"/>`;
+  svg += `<circle cx="250" cy="375" r="3" fill="rgba(255,255,255,0.40)"/>`;
+  svg += `<rect x="105" y="15" width="290" height="120"/>`;
+  svg += `<rect x="105" y="615" width="290" height="120"/>`;
+  svg += `<rect x="180" y="15" width="140" height="45"/>`;
+  svg += `<rect x="180" y="690" width="140" height="45"/>`;
+  svg += `<circle cx="250" cy="85" r="3" fill="rgba(255,255,255,0.40)"/>`;
+  svg += `<circle cx="250" cy="665" r="3" fill="rgba(255,255,255,0.40)"/>`;
+  svg += `<path d="M 180 85 A 70 70 0 0 0 320 85"/>`;
+  svg += `<path d="M 180 665 A 70 70 0 0 1 320 665"/>`;
+  svg += `</g>`;
+
+  // Goals
+  svg += `<g fill="rgba(255,255,255,0.50)">`;
+  svg += `<rect x="218" y="0" width="64" height="12" rx="2"/>`;
+  svg += `<rect x="218" y="738" width="64" height="12" rx="2"/>`;
+  svg += `</g>`;
+
+  // Players
+  for (const p of markers) {
+    const rc = ratingColor(p.valoracion);
+    const valText = p.valoracion != null ? p.valoracion.toFixed(1) : '—';
+    const tooltip = `${p.jugador || '?'} | ${p.posicion || '—'} | ⭐${valText}`;
+    const mvpGlow = p.isMvp ? 'filter:url(#mvpGlow)' : '';
+    const mvpStroke = p.isMvp ? '#ffd700' : rc.stroke;
+    const mvpStrokeW = p.isMvp ? '3' : '2';
+
+    svg += `<g class="player-group" transform="translate(${p.x}, ${p.y})" style="${mvpGlow}">`;
+    svg += `<title>${tooltip}</title>`;
+    svg += `<circle r="27" fill="${rc.fill}" stroke="${mvpStroke}" stroke-width="${mvpStrokeW}" class="player-ring"/>`;
+    svg += `<text x="0" y="4" text-anchor="middle" fill="#fff" font-weight="700" font-size="14">${valText}</text>`;
+    svg += `<text x="0" y="42" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="11" font-weight="600" class="player-name">${p.jugador || '?'}</text>`;
+    if (p.isMvp) {
+      svg += `<text x="0" y="-32" text-anchor="middle" fill="#ffd700" font-size="16">👑</text>`;
     }
+    svg += `</g>`;
   }
-  html += '</div></div>';
 
-  // Unplaced players
+  svg += `</svg>`;
+
+  let html = `<div class="pitch-container">${svg}</div>`;
+
   if (unplaced.length) {
     html += '<div class="pitch-unplaced">';
     html += '<div class="pitch-unplaced-title">Sin posición asignada:</div>';
@@ -811,34 +915,34 @@ function renderPitchView(stats, mvpName) {
     html += '</div>';
   }
 
-  html += '</div>';
   return html;
 }
 
-function buildMatchTable(stats) {
-  // Pre-determine MVP for highlighting
-  let maxVal = -1;
-  let mvps = [];
-  for (const s of stats) {
-    const v = s.valoracion != null ? s.valoracion : -1;
-    if (v > maxVal) { maxVal = v; mvps = [s.jugador]; }
-    else if (v === maxVal && v >= 0) { mvps.push(s.jugador); }
+function buildMatchTable(stats, mvpName) {
+  if (!mvpName) {
+    // Fallback: determine MVP if not provided
+    let maxVal = -1;
+    let mvps = [];
+    for (const s of stats) {
+      const v = s.valoracion != null ? s.valoracion : -1;
+      if (v > maxVal) { maxVal = v; mvps = [s.jugador]; }
+      else if (v === maxVal && v >= 0) { mvps.push(s.jugador); }
+    }
+    mvpName = mvps.length > 0 ? mvps[Math.floor(Math.random() * mvps.length)] : null;
   }
-  const mvpName = mvps.length > 0 ? mvps[Math.floor(Math.random() * mvps.length)] : null;
 
   let html = '<table><thead><tr>';
   html += '<th>Pos</th>';
   for (const f of HISTORY_STAT_FIELDS) {
     html += `<th>${f.label}</th>`;
   }
-  html += '<th></th>';
   html += '</tr></thead><tbody>';
 
   for (const s of stats) {
     const valClass = s.valoracion >= 7.5 ? 'high' : s.valoracion >= 6 ? 'mid' : 'low';
     const posLabel = s.posicion ? POSITIONS.find(p => p.id === s.posicion)?.label.split(' - ')[0] || s.posicion : '—';
     const isMvp = s.jugador === mvpName;
-    html += '<tr>';
+    html += `<tr class="${isMvp ? 'mvp-row' : ''}">`;
     html += `<td><span class="pos-badge">${posLabel}</span></td>`;
     html += `<td class="player-name">${s.jugador || '—'}${isMvp ? ' 👑' : ''}</td>`;
     html += `<td><span class="rating-badge ${valClass}">${s.valoracion ?? '—'}</span></td>`;
@@ -856,7 +960,7 @@ function buildMatchTable(stats) {
   return html;
 }
 
-function enterEditMode(container, stats, matchId) {
+function enterEditMode(container, stats, matchId, matchInfo) {
   const posOpts = POSITIONS.map(p =>
     `<option value="${p.id}">${p.label}</option>`
   ).join('');
@@ -893,7 +997,7 @@ function enterEditMode(container, stats, matchId) {
   container.innerHTML = html;
 
   container.querySelector('.btn-cancel-edit').addEventListener('click', () => {
-    renderMatchPlayers(container, stats, matchId);
+    renderMatchPlayers(container, stats, matchId, matchInfo);
   });
 
   container.querySelector('.btn-save-edit').addEventListener('click', async () => {
@@ -943,7 +1047,7 @@ function enterEditMode(container, stats, matchId) {
       const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`);
       const data = await res.json();
       if (data.data && data.data.stats) {
-        renderMatchPlayers(container, data.data.stats, matchId);
+        renderMatchPlayers(container, data.data.stats, matchId, data.data);
       }
     } catch {}
   });
@@ -966,7 +1070,11 @@ function initDashboard() {
   });
 
   statSelect.addEventListener('change', () => {
-    if (playerSelect.value) loadDashboardPlayerStats(playerSelect.value);
+    if (currentChartType === 'bar') {
+      loadBarChart();
+    } else if (playerSelect.value) {
+      loadDashboardPlayerStats(playerSelect.value);
+    }
   });
 
   loadDashboardPlayers();
@@ -1006,9 +1114,15 @@ async function loadDashboardPlayerStats(playerName) {
     }
     document.getElementById('dash-empty').style.display = 'none';
     document.getElementById('dash-chart-wrapper').style.display = 'block';
-    const statKey = document.getElementById('dash-stat').value;
-    updateChart(data.data, statKey);
-    updateSummary(data.data, statKey);
+
+    if (currentChartType === 'radar') {
+      updateChartRadar(data.data);
+      document.getElementById('dash-summary-card').style.display = 'none';
+    } else {
+      const statKey = document.getElementById('dash-stat').value;
+      updateChart(data.data, statKey);
+      updateSummary(data.data, statKey);
+    }
   } catch (err) {
     toast('Error cargando datos del jugador: ' + err.message, 'error');
   }
@@ -1291,6 +1405,295 @@ function renderRanking(data) {
       });
       renderRanking(sorted);
     });
+  });
+}
+
+// ── Season Timeline ──
+async function initTimeline() {
+  const container = document.getElementById('season-timeline');
+  const scroll = document.getElementById('timeline-scroll');
+  try {
+    const res = await fetchWithTimeout(`${API_URL}/matches/summary`);
+    const data = await res.json();
+    if (!data.data || !data.data.length) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'block';
+    renderTimeline(data.data);
+  } catch {
+    container.style.display = 'none';
+  }
+}
+
+function renderTimeline(matches) {
+  const scroll = document.getElementById('timeline-scroll');
+  scroll.innerHTML = '';
+
+  for (const m of matches) {
+    const val = m.avg_valoracion;
+    const valClass = val >= 7.5 ? 'high' : val >= 6 ? 'mid' : 'low';
+    const fecha = m.fecha ? new Date(m.fecha + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }) : '—';
+
+    const item = document.createElement('div');
+    item.className = 'timeline-item';
+    item.dataset.matchId = m.id;
+    item.innerHTML = `
+      <div class="timeline-dot ${valClass}" title="⭐ ${val != null ? val.toFixed(1) : '—'}"></div>
+      <div class="timeline-label-text">${m.rival || '—'}</div>
+      <div class="timeline-label-date">${fecha}</div>
+    `;
+    item.addEventListener('click', () => {
+      const card = document.querySelector(`.match-header[data-match-id="${m.id}"]`);
+      if (card) {
+        card.click();
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+    scroll.appendChild(item);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Dashboard Multi-Chart
+// ═══════════════════════════════════════════
+
+let currentChartType = 'line';
+
+function initDashboardChartType() {
+  document.querySelectorAll('.chart-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.chart-type-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentChartType = btn.dataset.chart;
+
+      // Show/hide controls
+      const playerGroup = document.getElementById('dash-player-group');
+      const statGroup = document.getElementById('dash-stat-group');
+      const chartWrapper = document.getElementById('dash-chart-wrapper');
+      const emptyState = document.getElementById('dash-empty');
+
+      if (currentChartType === 'bar') {
+        playerGroup.style.display = 'none';
+        statGroup.style.display = 'flex';
+        emptyState.innerHTML = '<span class="empty-icon">📊</span><p>Seleccioná una estadística para comparar jugadores</p>';
+        emptyState.style.display = 'block';
+        chartWrapper.style.display = 'none';
+        document.getElementById('dash-summary-card').style.display = 'none';
+        if (dashChart) { dashChart.destroy(); dashChart = null; }
+        // Load bar chart
+        loadBarChart();
+      } else {
+        playerGroup.style.display = 'flex';
+        statGroup.style.display = 'flex';
+        const player = document.getElementById('dash-player').value;
+        if (player) {
+          loadDashboardPlayerStats(player);
+        } else {
+          emptyState.innerHTML = '<span class="empty-icon">📊</span><p>Seleccioná un jugador para ver su evolución</p>';
+          emptyState.style.display = 'block';
+          chartWrapper.style.display = 'none';
+          document.getElementById('dash-summary-card').style.display = 'none';
+          if (dashChart) { dashChart.destroy(); dashChart = null; }
+        }
+      }
+    });
+  });
+}
+
+const LB_KEY_MAP = {
+  valoracion: 'avg_valoracion',
+  goles: 'avg_goles',
+  asistencias: 'avg_asistencias',
+  pases: 'avg_pases',
+  precision_pases: 'avg_precision_pases',
+  tiros: 'avg_tiros',
+  precision_tiros: 'avg_precision_tiros',
+  regates: 'avg_regates',
+  exito_regates: 'avg_exito_regates',
+  entradas: 'avg_entradas',
+  exito_entradas: 'avg_exito_entradas',
+  minutos_jugados: 'avg_minutos',
+  distancia_recorrida_km: 'avg_distancia',
+  distancia_sprint_km: 'avg_sprint',
+};
+
+async function loadBarChart() {
+  const statKey = document.getElementById('dash-stat').value;
+  const lbKey = LB_KEY_MAP[statKey] || statKey;
+  const emptyState = document.getElementById('dash-empty');
+  const chartWrapper = document.getElementById('dash-chart-wrapper');
+  const summaryCard = document.getElementById('dash-summary-card');
+
+  try {
+    const res = await fetchWithTimeout(`${API_URL}/leaderboard`);
+    const data = await res.json();
+    const players = data.data || [];
+
+    if (!players.length) {
+      emptyState.innerHTML = '<span class="empty-icon">📊</span><p>No hay datos de jugadores</p>';
+      emptyState.style.display = 'block';
+      chartWrapper.style.display = 'none';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    chartWrapper.style.display = 'block';
+    summaryCard.style.display = 'none';
+
+    const isRating = lbKey === 'avg_valoracion';
+    const ctx = document.getElementById('dash-chart').getContext('2d');
+    if (dashChart) dashChart.destroy();
+
+    const getVal = (p) => {
+      if (statKey === 'goles+asistencias') return (p.avg_goles || 0) + (p.avg_asistencias || 0);
+      const v = p[lbKey];
+      return v != null ? v : 0;
+    };
+
+    players.sort((a, b) => getVal(b) - getVal(a));
+
+    const labels = players.map(p => p.jugador);
+    const values = players.map(p => getVal(p));
+
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    const textColor = isLight ? '#1a1d27' : '#e8eaf6';
+    const gridColor = isLight ? '#d0d4dc' : '#2e3350';
+
+    dashChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: getStatLabel(statKey),
+          data: values,
+          backgroundColor: values.map(v => {
+            if (isRating) {
+              if (v >= 7.5) return 'rgba(0,230,118,0.6)';
+              if (v >= 6) return 'rgba(255,214,0,0.6)';
+              return 'rgba(255,68,68,0.6)';
+            }
+            return 'rgba(0,195,255,0.6)';
+          }),
+          borderColor: values.map(v => {
+            if (isRating) {
+              if (v >= 7.5) return '#00e676';
+              if (v >= 6) return '#ffd600';
+              return '#ff4444';
+            }
+            return '#00c3ff';
+          }),
+          borderWidth: 1,
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (context) => `${context.parsed.x != null ? context.parsed.x : '—'}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { color: textColor, font: { size: 11 } },
+            grid: { color: gridColor }
+          },
+          y: {
+            ticks: { color: textColor, font: { size: 11 } },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  } catch (err) {
+    emptyState.innerHTML = `<span class="empty-icon">❌</span><p>Error: ${err.message}</p>`;
+    emptyState.style.display = 'block';
+    chartWrapper.style.display = 'none';
+  }
+}
+
+function updateChartRadar(stats) {
+  const ctx = document.getElementById('dash-chart').getContext('2d');
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const textColor = isLight ? '#1a1d27' : '#e8eaf6';
+  const gridColor = isLight ? '#d0d4dc' : '#2e3350';
+
+  if (dashChart) dashChart.destroy();
+
+  // Compute averages
+  const avg = (key) => {
+    const vals = stats.map(s => s[key]).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  };
+
+  const radarLabels = [
+    'Valoración', 'Goles', 'Asistencias', 'Pases',
+    'Precisión %', 'Regates', 'Entradas', 'Tiros'
+  ];
+
+  const rawValues = [
+    avg('valoracion'),
+    avg('goles'),
+    avg('asistencias'),
+    avg('pases'),
+    avg('precision_pases'),
+    avg('regates'),
+    avg('entradas'),
+    avg('tiros'),
+  ];
+
+  // Normalize to 0-10 scale for visual balance
+  const normalizers = [10, 5, 5, 150, 100, 30, 30, 20];
+  const radarData = rawValues.map((v, i) => Math.min(v / normalizers[i] * 10, 10));
+
+  dashChart = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: radarLabels,
+      datasets: [{
+        label: stats[0]?.jugador || 'Jugador',
+        data: radarData,
+        backgroundColor: 'rgba(0,195,255,0.15)',
+        borderColor: '#00c3ff',
+        borderWidth: 2,
+        pointBackgroundColor: '#00c3ff',
+        pointBorderColor: isLight ? '#fff' : '#0f1117',
+        pointBorderWidth: 2,
+        pointRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: textColor, font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const i = context.dataIndex;
+              return `${radarLabels[i]}: ${rawValues[i] != null ? (radarLabels[i].includes('%') ? rawValues[i] : rawValues[i].toFixed(1)) : '—'}`;
+            }
+          }
+        }
+      },
+      scales: {
+        r: {
+          beginAtZero: true,
+          max: 10,
+          ticks: { display: false, stepSize: 2 },
+          grid: { color: gridColor },
+          angleLines: { color: gridColor },
+          pointLabels: { color: textColor, font: { size: 11 } }
+        }
+      }
+    }
   });
 }
 
