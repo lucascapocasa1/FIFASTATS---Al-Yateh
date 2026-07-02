@@ -160,6 +160,7 @@ body {
 }
 .match-input::placeholder { color: var(--text-dim); }
 .match-date { min-width: 160px; max-width: 200px; color-scheme: dark; }
+.match-season { min-width: 140px; max-width: 180px; cursor: pointer; }
 
 /* ── Buttons ── */
 .btn {
@@ -228,6 +229,12 @@ body {
 .match-rival { font-size: 16px; font-weight: 700; color: var(--accent); }
 .match-date { font-size: 13px; color: var(--text-muted); }
 .match-desc { font-size: 13px; color: var(--text-dim); }
+.season-badge {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 20px;
+  background: rgba(0,195,255,0.15); color: var(--accent);
+  border: 1px solid rgba(0,195,255,0.25); white-space: nowrap;
+}
 .match-meta { display: flex; align-items: center; gap: 12px; }
 .match-players { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
 .match-body { display: none; padding: 0 18px 18px; }
@@ -359,13 +366,17 @@ body {
 .overlay-text { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .overlay-sub { font-size: 13px; color: var(--text-muted); }
 
-/* ── History Search ── */
+/* ── History Filters ── */
+.history-filters {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 20px 16px; flex-wrap: wrap;
+}
 .history-search-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 0 20px 16px; position: relative;
+  flex: 1; min-width: 200px; position: relative;
 }
 .search-icon {
-  position: absolute; left: 28px; top: 10px;
+  position: absolute; left: 8px; top: 10px;
   font-size: 14px; color: var(--text-dim); pointer-events: none;
 }
 .history-search-input {
@@ -375,6 +386,14 @@ body {
   font-size: 14px; outline: none; transition: var(--transition);
 }
 .history-search-input:focus { border-color: var(--accent); }
+.history-season-select {
+  padding: 8px 12px; min-width: 180px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-size: 14px; cursor: pointer; outline: none;
+  transition: var(--transition);
+}
+.history-season-select:focus { border-color: var(--accent); }
 
 /* ── Drag Handle ── */
 .preview-item { position: relative; cursor: grab; user-select: none; }
@@ -489,6 +508,14 @@ body {
 }
 .dash-select:focus {
   outline: none;
+}
+#dash-compare-group {
+  transition: opacity 0.2s ease;
+}
+#btn-compare-toggle.active {
+  background: var(--accent);
+  color: #fff;
+}
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(0,195,255,0.15);
 }

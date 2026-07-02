@@ -5,7 +5,7 @@ const router = express.Router();
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
-const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
+const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons } = require('./db');
 
 const CONCURRENCY = 3;
 
@@ -107,13 +107,13 @@ router.post('/upload', upload.array('images', 30), async (req, res) => {
  */
 router.post('/match', async (req, res) => {
   try {
-    const { rival, descripcion, fecha, goles_favor, goles_contra } = req.body;
-    console.log('[API] POST /match - body:', { rival, descripcion, fecha, goles_favor, goles_contra });
+    const { rival, descripcion, fecha, goles_favor, goles_contra, temporada } = req.body;
+    console.log('[API] POST /match - body:', { rival, descripcion, fecha, goles_favor, goles_contra, temporada });
     if (!rival || !fecha) {
       console.log('[API] POST /match - Campos faltantes');
       return res.status(400).json({ error: 'Faltan campos requeridos: rival, fecha' });
     }
-    const id = await createMatch(rival, descripcion, fecha, goles_favor || 0, goles_contra || 0);
+    const id = await createMatch(rival, descripcion, fecha, goles_favor || 0, goles_contra || 0, temporada || '');
     console.log('[API] POST /match - Creado con id:', id);
     res.json({ success: true, id });
   } catch (err) {
@@ -128,7 +128,8 @@ router.post('/match', async (req, res) => {
  */
 router.get('/matches', async (req, res) => {
   try {
-    const matches = await getMatches();
+    const season = req.query.season || '';
+    const matches = await getMatches(season);
     res.json({ data: matches });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -141,7 +142,8 @@ router.get('/matches', async (req, res) => {
  */
 router.get('/matches/summary', async (req, res) => {
   try {
-    const summary = await getMatchesSummary();
+    const season = req.query.season || '';
+    const summary = await getMatchesSummary(season);
     res.json({ data: summary });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -298,6 +300,18 @@ router.get('/players', async (req, res) => {
   try {
     const players = await getAllPlayers();
     res.json({ data: players });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /seasons
+ */
+router.get('/seasons', async (req, res) => {
+  try {
+    const seasons = await getSeasons();
+    res.json({ data: seasons });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

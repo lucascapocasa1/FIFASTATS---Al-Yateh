@@ -62,6 +62,8 @@ async function getDB() {
   // Match result columns
   try { db.run("ALTER TABLE matches ADD COLUMN goles_favor INTEGER DEFAULT 0"); } catch (e) {}
   try { db.run("ALTER TABLE matches ADD COLUMN goles_contra INTEGER DEFAULT 0"); } catch (e) {}
+  // Season column
+  try { db.run("ALTER TABLE matches ADD COLUMN temporada TEXT DEFAULT ''"); } catch (e) {}
 
   saveDB();
   return db;
@@ -110,12 +112,12 @@ async function _insertStats(stats, matchId = null) {
   return id;
 }
 
-async function _createMatch(rival, descripcion, fecha, golesFavor = 0, golesContra = 0) {
-  console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha, 'gf:', golesFavor, 'gc:', golesContra);
+async function _createMatch(rival, descripcion, fecha, golesFavor = 0, golesContra = 0, temporada = '') {
+  console.log('[DB] createMatch - rival:', rival, 'fecha:', fecha, 'gf:', golesFavor, 'gc:', golesContra, 'temporada:', temporada);
   const db = await getDB();
   db.run(
-    'INSERT INTO matches (rival, descripcion, fecha, goles_favor, goles_contra) VALUES (?, ?, ?, ?, ?)',
-    [rival, descripcion || '', fecha, golesFavor, golesContra]
+    'INSERT INTO matches (rival, descripcion, fecha, goles_favor, goles_contra, temporada) VALUES (?, ?, ?, ?, ?, ?)',
+    [rival, descripcion || '', fecha, golesFavor, golesContra, temporada]
   );
   const result = db.exec('SELECT MAX(id) as id FROM matches');
   const id = result[0]?.values[0][0];
@@ -124,12 +126,14 @@ async function _createMatch(rival, descripcion, fecha, golesFavor = 0, golesCont
   return id;
 }
 
-async function getMatches() {
+async function getMatches(season = '') {
   const db = await getDB();
+  const seasonFilter = season ? ` WHERE m.temporada = '${season.replace(/'/g, "''")}'` : '';
   const result = db.exec(`
     SELECT m.*, COUNT(s.id) as jugadores
     FROM matches m
     LEFT JOIN stats s ON s.match_id = m.id
+    ${seasonFilter}
     GROUP BY m.id
     ORDER BY m.created_at DESC
   `);
@@ -200,7 +204,7 @@ async function _deleteStats(id) {
 async function _updateMatch(id, data) {
   console.log('[DB] updateMatch - id:', id, 'data:', JSON.stringify(data));
   const db = await getDB();
-  const allowed = ['rival', 'descripcion', 'fecha', 'goles_favor', 'goles_contra'];
+  const allowed = ['rival', 'descripcion', 'fecha', 'goles_favor', 'goles_contra', 'temporada'];
   const sets = allowed.filter(f => f in data).map(f => `${f} = ?`);
   const values = allowed.filter(f => f in data).map(f => data[f]);
   if (!sets.length) throw new Error('No hay campos para actualizar');
@@ -216,15 +220,17 @@ async function _deleteMatch(matchId) {
   saveDB();
 }
 
-async function getMatchesSummary() {
+async function getMatchesSummary(season = '') {
   const db = await getDB();
+  const seasonFilter = season ? ` WHERE m.temporada = '${season.replace(/'/g, "''")}'` : '';
   const result = db.exec(`
     SELECT
-      m.id, m.rival, m.descripcion, m.fecha, m.created_at,
+      m.id, m.rival, m.descripcion, m.fecha, m.created_at, m.temporada,
       COUNT(s.id) as jugadores,
       ROUND(AVG(s.valoracion), 1) as avg_valoracion
     FROM matches m
     LEFT JOIN stats s ON s.match_id = m.id
+    ${seasonFilter}
     GROUP BY m.id
     ORDER BY m.fecha ASC
   `);
@@ -301,6 +307,13 @@ async function getAllPlayers() {
   return result[0].values.map(row => row[0]);
 }
 
+async function getSeasons() {
+  const db = await getDB();
+  const result = db.exec(`SELECT DISTINCT temporada FROM matches WHERE temporada != '' ORDER BY temporada DESC`);
+  if (!result.length || !result[0].values.length) return [];
+  return result[0].values.map(row => row[0]);
+}
+
 async function getAllStats() {
   const db = await getDB();
   const result = db.exec('SELECT * FROM stats ORDER BY fecha DESC');
@@ -320,4 +333,4 @@ const updateMatch = serialized(_updateMatch);
 const deleteStats = serialized(_deleteStats);
 const deleteMatch = serialized(_deleteMatch);
 
-module.exports = { getDB, insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };
+module.exports = { getDB, insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons };

@@ -48,6 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initRanking();
   loadMatchHistory();
   initTimeline();
+  initHistorySeasonFilter();
+  loadSeasons();
   setDefaultDate();
 });
 
@@ -491,6 +493,7 @@ async function saveAllPlayers() {
   const rival = document.getElementById('match-rival').value.trim();
   const descripcion = document.getElementById('match-desc').value.trim();
   const fecha = document.getElementById('match-fecha').value;
+  const temporada = document.getElementById('match-season').value;
 
   if (!rival) { toast('Falta el nombre del rival', 'error'); return; }
   if (!fecha) { toast('Falta la fecha del partido', 'error'); return; }
@@ -506,7 +509,7 @@ async function saveAllPlayers() {
       const matchRes = await fetchWithTimeout(`${API_URL}/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rival, descripcion, fecha, goles_favor, goles_contra })
+        body: JSON.stringify({ rival, descripcion, fecha, goles_favor, goles_contra, temporada })
       }, 10000);
       const matchData = await matchRes.json();
       if (!matchData.success) throw new Error('Error creando partido');
@@ -560,13 +563,51 @@ async function saveAllPlayers() {
   }
 }
 
+// ── Season ──
+async function loadSeasons() {
+  try {
+    const res = await fetchWithTimeout(`${API_URL}/seasons`);
+    const data = await res.json();
+    const seasons = data.data || [];
+    // Populate the upload form season select
+    const matchSeason = document.getElementById('match-season');
+    matchSeason.innerHTML = '<option value="">— Sin temporada —</option>';
+    seasons.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      matchSeason.appendChild(opt);
+    });
+    // Populate the history filter season select
+    const historySeason = document.getElementById('history-season');
+    historySeason.innerHTML = '<option value="">Todas las temporadas</option>';
+    seasons.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      historySeason.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Error cargando temporadas:', e);
+  }
+}
+
+function initHistorySeasonFilter() {
+  document.getElementById('history-season').addEventListener('change', () => {
+    loadMatchHistory();
+    initTimeline();
+  });
+}
+
 // ── Match History ──
 async function loadMatchHistory() {
   const container = document.getElementById('history-container');
   container.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span><p>Cargando...</p></div>';
 
   try {
-    const response = await fetchWithTimeout(`${API_URL}/matches`);
+    const season = document.getElementById('history-season').value;
+    const url = season ? `${API_URL}/matches?season=${encodeURIComponent(season)}` : `${API_URL}/matches`;
+    const response = await fetchWithTimeout(url);
     const data = await response.json();
 
     state.history = data.data || [];
@@ -618,12 +659,14 @@ async function renderMatchHistory(matches, container) {
       ? `<span class="match-result-badge ${resultClass}">${gf}-${gc}</span>`
       : '';
 
+    const temporadaBadge = match.temporada ? `<span class="season-badge">${match.temporada}</span>` : '';
     card.innerHTML = `
       <div class="match-header" data-match-id="${match.id}">
         <div class="match-info">
           <span class="match-rival">🆚 ${match.rival}</span>
           <span class="match-date">${fecha}</span>
           ${match.descripcion ? `<span class="match-desc">${match.descripcion}</span>` : ''}
+          ${temporadaBadge}
         </div>
         <div class="match-meta">
           ${resultHtml}
@@ -790,12 +833,15 @@ function renderMatchReport(stats, mvpName, matchInfo) {
     ? `<span class="match-result-badge ${resultClass}">${gf}-${gc}</span>`
     : '<span class="match-result-badge" style="color:var(--text-dim)">—</span>';
 
+  const seasonHtml = matchInfo && matchInfo.temporada ? `<span class="season-badge">${matchInfo.temporada}</span>` : '';
+
   div.innerHTML = `
     <div class="match-report-header">
       <div class="match-report-title">⚽ Resumen del Partido</div>
       <div class="match-report-meta" id="match-report-meta-${matchInfo?.id || '0'}">
         <span class="match-report-rival">🆚 ${matchInfo && matchInfo.rival ? matchInfo.rival : '—'}</span>
         <span class="match-report-fecha">📅 ${fecha}</span>
+        ${seasonHtml}
         <span class="match-report-result">${resultHtml}</span>
         <span>👥 ${stats.length} jug.</span>
       </div>
@@ -1114,12 +1160,14 @@ function enterEditMatchMode(container, matchInfo, matchId) {
   const currentDesc = matchInfo.descripcion || '';
   const currentGf = matchInfo.goles_favor != null ? matchInfo.goles_favor : 0;
   const currentGc = matchInfo.goles_contra != null ? matchInfo.goles_contra : 0;
+  const currentSeason = matchInfo.temporada || '';
 
   metaEl.innerHTML = `
     <div class="match-edit-meta">
       <input type="text" id="edit-match-rival" class="match-input" value="${currentRival}" placeholder="Rival" />
       <input type="date" id="edit-match-fecha" class="match-input match-date" value="${currentFecha}" />
       <input type="text" id="edit-match-desc" class="match-input" value="${currentDesc}" placeholder="Descripción" style="min-width:140px" />
+      <input type="text" id="edit-match-season" class="match-input" value="${currentSeason}" placeholder="Temporada (ej: 2024/25)" style="min-width:100px" />
       <div class="match-result-input">
         <input type="number" id="edit-match-gf" class="match-input score-input" min="0" value="${currentGf}" />
         <span class="score-sep">-</span>
@@ -1131,6 +1179,7 @@ function enterEditMatchMode(container, matchInfo, matchId) {
   `;
 
   document.getElementById('btn-save-match-data').addEventListener('click', async () => {
+    const temporadaEl = document.getElementById('edit-match-season');
     const body = {
       rival: document.getElementById('edit-match-rival').value.trim(),
       fecha: document.getElementById('edit-match-fecha').value,
@@ -1138,6 +1187,7 @@ function enterEditMatchMode(container, matchInfo, matchId) {
       goles_favor: parseInt(document.getElementById('edit-match-gf').value) || 0,
       goles_contra: parseInt(document.getElementById('edit-match-gc').value) || 0,
     };
+    if (temporadaEl) body.temporada = temporadaEl.value;
     if (!body.rival || !body.fecha) { toast('Rival y fecha son obligatorios', 'error'); return; }
     try {
       const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`, {
@@ -1173,58 +1223,86 @@ function enterEditMatchMode(container, matchInfo, matchId) {
 const statsCache = [];
 
 // ── Dashboard ──
+let compareMode = false;
+
 function initDashboard() {
   const playerSelect = document.getElementById('dash-player');
+  const player2Select = document.getElementById('dash-player2');
   const statSelect = document.getElementById('dash-stat');
+  const compareBtn = document.getElementById('btn-compare-toggle');
+  const compareGroup = document.getElementById('dash-compare-group');
 
-  playerSelect.addEventListener('change', () => {
-    if (playerSelect.value) {
-      loadDashboardPlayerStats(playerSelect.value);
-    } else {
-      document.getElementById('dash-empty').style.display = 'block';
-      document.getElementById('dash-chart-wrapper').style.display = 'none';
-      document.getElementById('dash-summary-card').style.display = 'none';
-      if (dashChart) { dashChart.destroy(); dashChart = null; }
-    }
-  });
-
-  statSelect.addEventListener('change', () => {
-    if (currentChartType === 'bar') {
+  function loadChart() {
+    const p1 = playerSelect.value;
+    const p2 = compareMode ? player2Select.value : '';
+    if (currentChartType === 'line' || currentChartType === 'radar') {
+      if (p1) {
+        loadDashboardPlayerStats(p1, p2);
+      } else {
+        document.getElementById('dash-empty').style.display = 'block';
+        document.getElementById('dash-chart-wrapper').style.display = 'none';
+        document.getElementById('dash-summary-card').style.display = 'none';
+        if (dashChart) { dashChart.destroy(); dashChart = null; }
+      }
+    } else if (currentChartType === 'bar') {
       loadBarChart();
-    } else if (playerSelect.value) {
-      loadDashboardPlayerStats(playerSelect.value);
     }
+  }
+
+  compareBtn.addEventListener('click', () => {
+    compareMode = !compareMode;
+    compareBtn.classList.toggle('active', compareMode);
+    compareGroup.style.display = compareMode ? 'flex' : 'none';
+    if (!compareMode) player2Select.value = '';
+    loadChart();
   });
+
+  playerSelect.addEventListener('change', loadChart);
+  player2Select.addEventListener('change', loadChart);
+  statSelect.addEventListener('change', loadChart);
 
   loadDashboardPlayers();
 }
 
 async function loadDashboardPlayers() {
   const select = document.getElementById('dash-player');
+  const select2 = document.getElementById('dash-player2');
   const currentValue = select.value;
   try {
     const res = await fetchWithTimeout(`${API_URL}/players`);
     const data = await res.json();
+    const players = data.data || [];
     select.innerHTML = '<option value="">-- Seleccionar --</option>';
-    if (data.data && data.data.length) {
-      data.data.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p;
-        opt.textContent = p;
-        select.appendChild(opt);
-      });
-    }
+    select2.innerHTML = '<option value="">-- Seleccionar --</option>';
+    players.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      select.appendChild(opt);
+      const opt2 = document.createElement('option');
+      opt2.value = p;
+      opt2.textContent = p;
+      select2.appendChild(opt2);
+    });
     if (currentValue) select.value = currentValue;
   } catch (e) {
     console.error('Error cargando jugadores:', e);
   }
 }
 
-async function loadDashboardPlayerStats(playerName) {
+async function loadDashboardPlayerStats(playerName, playerName2) {
   try {
-    const res = await fetchWithTimeout(`${API_URL}/stats/player/${encodeURIComponent(playerName)}`);
-    const data = await res.json();
-    if (!data.data || !data.data.length) {
+    const [res1, res2] = await Promise.all([
+      fetchWithTimeout(`${API_URL}/stats/player/${encodeURIComponent(playerName)}`),
+      playerName2 ? fetchWithTimeout(`${API_URL}/stats/player/${encodeURIComponent(playerName2)}`) : Promise.resolve(null)
+    ]);
+    const data1 = await res1.json();
+    const data2 = res2 ? await res2.json() : null;
+
+    const stats1 = data1.data || [];
+    const stats2 = data2?.data || [];
+
+    if (!stats1.length) {
       document.getElementById('dash-empty').style.display = 'block';
       document.getElementById('dash-empty').querySelector('p').textContent = 'No hay datos para este jugador';
       document.getElementById('dash-chart-wrapper').style.display = 'none';
@@ -1235,12 +1313,17 @@ async function loadDashboardPlayerStats(playerName) {
     document.getElementById('dash-chart-wrapper').style.display = 'block';
 
     if (currentChartType === 'radar') {
-      updateChartRadar(data.data);
+      updateChartRadar(stats1, stats2);
       document.getElementById('dash-summary-card').style.display = 'none';
     } else {
       const statKey = document.getElementById('dash-stat').value;
-      updateChart(data.data, statKey);
-      updateSummary(data.data, statKey);
+      if (stats2.length) {
+        updateChartCompare(stats1, stats2, statKey);
+        document.getElementById('dash-summary-card').style.display = 'none';
+      } else {
+        updateChart(stats1, statKey);
+        updateSummary(stats1, statKey);
+      }
     }
   } catch (err) {
     toast('Error cargando datos del jugador: ' + err.message, 'error');
@@ -1323,6 +1406,112 @@ function updateChart(stats, statKey) {
         pointHoverRadius: 6,
         borderWidth: 2,
       }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, labels: { color: textColor, font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: (context) => `${context.dataset.label}: ${context.parsed.y != null ? context.parsed.y : '—'}`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } },
+        y: {
+          beginAtZero: !isRating,
+          suggestedMin, suggestedMax,
+          ticks: { color: textColor, font: { size: 11 } },
+          grid: { color: gridColor }
+        }
+      },
+      interaction: { intersect: false, mode: 'index' }
+    }
+  });
+}
+
+function updateChartCompare(stats1, stats2, statKey) {
+  const ctx = document.getElementById('dash-chart').getContext('2d');
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const textColor = isLight ? '#1a1d27' : '#e8eaf6';
+  const gridColor = isLight ? '#d0d4dc' : '#2e3350';
+
+  if (dashChart) dashChart.destroy();
+
+  // Collect all unique dates sorted
+  const allDates = new Set();
+  stats1.forEach(s => allDates.add(s.fecha || s.match_fecha));
+  stats2.forEach(s => allDates.add(s.fecha || s.match_fecha));
+  const sortedDates = [...allDates].filter(Boolean).sort();
+
+  const getVal = (stats, date) => {
+    const match = stats.find(s => (s.fecha || s.match_fecha) === date);
+    if (!match) return null;
+    const v = getStatValue(match, statKey);
+    return v != null ? v : null;
+  };
+
+  const labels = sortedDates.map(d => formatDate(d));
+  const values1 = sortedDates.map(d => getVal(stats1, d));
+  const values2 = sortedDates.map(d => getVal(stats2, d));
+
+  const isRating = statKey === 'valoracion';
+  const allVals = [...values1, ...values2].filter(v => v != null);
+  const suggestedMin = isRating ? Math.max(0, Math.floor(Math.min(...allVals) - 0.5)) : undefined;
+  const suggestedMax = isRating ? Math.min(10, Math.ceil(Math.max(...allVals) + 0.5)) : undefined;
+
+  const player1Name = stats1[0]?.jugador || 'Jugador 1';
+  const player2Name = stats2[0]?.jugador || 'Jugador 2';
+
+  dashChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: player1Name,
+          data: values1,
+          borderColor: '#00c3ff',
+          backgroundColor: (context) => {
+            const c = context.chart.ctx;
+            const g = c.createLinearGradient(0, 0, 0, 300);
+            g.addColorStop(0, 'rgba(0, 195, 255, 0.2)');
+            g.addColorStop(1, 'rgba(0, 195, 255, 0.01)');
+            return g;
+          },
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: '#00c3ff',
+          pointBorderColor: isLight ? '#ffffff' : '#0f1117',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+        },
+        {
+          label: player2Name,
+          data: values2,
+          borderColor: '#ffd600',
+          backgroundColor: (context) => {
+            const c = context.chart.ctx;
+            const g = c.createLinearGradient(0, 0, 0, 300);
+            g.addColorStop(0, 'rgba(255, 214, 0, 0.2)');
+            g.addColorStop(1, 'rgba(255, 214, 0, 0.01)');
+            return g;
+          },
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: '#ffd600',
+          pointBorderColor: isLight ? '#ffffff' : '#0f1117',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+          borderDash: [5, 3],
+        }
+      ]
     },
     options: {
       responsive: true,
@@ -1540,7 +1729,9 @@ async function initTimeline() {
   const container = document.getElementById('season-timeline');
   const scroll = document.getElementById('timeline-scroll');
   try {
-    const res = await fetchWithTimeout(`${API_URL}/matches/summary`);
+    const season = document.getElementById('history-season').value;
+    const url = season ? `${API_URL}/matches/summary?season=${encodeURIComponent(season)}` : `${API_URL}/matches/summary`;
+    const res = await fetchWithTimeout(url);
     const data = await res.json();
     if (!data.data || !data.data.length) {
       container.style.display = 'none';
@@ -1601,10 +1792,14 @@ function initDashboardChartType() {
       const emptyState = document.getElementById('dash-empty');
 
       const radarSelector = document.getElementById('radar-stats-selector');
+      const compareGroup = document.getElementById('dash-compare-group');
+      const compareBtn = document.getElementById('btn-compare-toggle');
       if (currentChartType === 'bar') {
         playerGroup.style.display = 'none';
         statGroup.style.display = 'flex';
         radarSelector.style.display = 'none';
+        compareGroup.style.display = 'none';
+        compareBtn.style.display = 'none';
         emptyState.innerHTML = '<span class="empty-icon">📊</span><p>Seleccioná una estadística para comparar jugadores</p>';
         emptyState.style.display = 'block';
         chartWrapper.style.display = 'none';
@@ -1615,6 +1810,8 @@ function initDashboardChartType() {
         playerGroup.style.display = 'flex';
         statGroup.style.display = 'none';
         radarSelector.style.display = 'flex';
+        compareBtn.style.display = 'inline-block';
+        if (!compareMode) compareGroup.style.display = 'none';
         const player = document.getElementById('dash-player').value;
         if (player) {
           loadDashboardPlayerStats(player);
@@ -1627,6 +1824,8 @@ function initDashboardChartType() {
         }
       } else {
         playerGroup.style.display = 'flex';
+        compareBtn.style.display = 'inline-block';
+        if (!compareMode) compareGroup.style.display = 'none';
         statGroup.style.display = 'flex';
         radarSelector.style.display = 'none';
         const player = document.getElementById('dash-player').value;
@@ -1770,7 +1969,7 @@ function getRadarSelectedKeys() {
   return Array.from(document.querySelectorAll('.radar-check input[type="checkbox"]:checked')).map(cb => cb.dataset.rkey);
 }
 
-function updateChartRadar(stats) {
+function updateChartRadar(stats1, stats2) {
   const ctx = document.getElementById('dash-chart').getContext('2d');
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   const textColor = isLight ? '#1a1d27' : '#e8eaf6';
@@ -1789,34 +1988,51 @@ function updateChartRadar(stats) {
   document.getElementById('dash-empty').style.display = 'none';
   document.getElementById('dash-chart-wrapper').style.display = 'block';
 
-  const avg = (key) => {
-    const vals = stats.map(s => s[key]).filter(v => v != null);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  const computeData = (stats) => {
+    const avg = (key) => {
+      const vals = stats.map(s => s[key]).filter(v => v != null);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    };
+    const rawValues = selected.map(k => avg(k));
+    return selected.map((k, i) => {
+      const norm = RADAR_NORMALIZERS[k] || 10;
+      return Math.min(rawValues[i] / norm * 10, 10);
+    });
   };
 
   const radarLabels = selected.map(k => RADAR_LABELS[k] || k);
-  const rawValues = selected.map(k => avg(k));
-  const radarData = selected.map((k, i) => {
-    const norm = RADAR_NORMALIZERS[k] || 10;
-    return Math.min(rawValues[i] / norm * 10, 10);
-  });
+  const data1 = computeData(stats1);
+  const data2 = stats2?.length ? computeData(stats2) : null;
+
+  const datasets = [{
+    label: stats1[0]?.jugador || 'Jugador',
+    data: data1,
+    backgroundColor: 'rgba(0,195,255,0.15)',
+    borderColor: '#00c3ff',
+    borderWidth: 2,
+    pointBackgroundColor: '#00c3ff',
+    pointBorderColor: isLight ? '#fff' : '#0f1117',
+    pointBorderWidth: 2,
+    pointRadius: 4,
+  }];
+
+  if (data2) {
+    datasets.push({
+      label: stats2[0]?.jugador || 'Jugador 2',
+      data: data2,
+      backgroundColor: 'rgba(255,214,0,0.15)',
+      borderColor: '#ffd600',
+      borderWidth: 2,
+      pointBackgroundColor: '#ffd600',
+      pointBorderColor: isLight ? '#fff' : '#0f1117',
+      pointBorderWidth: 2,
+      pointRadius: 4,
+    });
+  }
 
   dashChart = new Chart(ctx, {
     type: 'radar',
-    data: {
-      labels: radarLabels,
-      datasets: [{
-        label: stats[0]?.jugador || 'Jugador',
-        data: radarData,
-        backgroundColor: 'rgba(0,195,255,0.15)',
-        borderColor: '#00c3ff',
-        borderWidth: 2,
-        pointBackgroundColor: '#00c3ff',
-        pointBorderColor: isLight ? '#fff' : '#0f1117',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-      }]
-    },
+    data: { labels: radarLabels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -1826,10 +2042,10 @@ function updateChartRadar(stats) {
           callbacks: {
             label: (context) => {
               const i = context.dataIndex;
-              const raw = rawValues[i];
+              const ds = context.dataset;
+              const raw = ds.data[i];
               const label = radarLabels[i];
-              if (raw == null) return `${label}: —`;
-              return `${label}: ${label.includes('%') ? raw.toFixed(0) + '%' : raw.toFixed(1)}`;
+              return `${ds.label} — ${label}: ${label.includes('%') ? raw.toFixed(0) + '%' : raw.toFixed(1)}`;
             }
           }
         }
