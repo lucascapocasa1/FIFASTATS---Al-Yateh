@@ -4,7 +4,7 @@ const router = express.Router();
 
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
-const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
+const { parseStats, extractSelectedPlayer, validateStats, normalizePlayerName } = require('./parser');
 const { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary } = require('./db');
 
 const CONCURRENCY = 3;
@@ -26,6 +26,7 @@ async function processSingleImage(file, index) {
     const nameOcrText = await runOCR(nameBuffer);
 
     let playerName = extractSelectedPlayer(nameOcrText);
+    if (playerName) playerName = normalizePlayerName(playerName);
     if (!playerName) playerName = 'desconocido';
 
     result.ocr_debug = { name_text: nameOcrText.substring(0, 300) };

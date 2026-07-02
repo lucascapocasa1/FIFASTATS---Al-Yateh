@@ -8,6 +8,21 @@
  * Siempre tomamos el PRIMER número de la línea (el del jugador).
  */
 
+const CANONICAL_NAMES = [
+  'Adri', 'Charly', 'Nacho', 'Jere', 'Facu', 'Valen', 'Lucas',
+  'Davi', 'Pepo', 'Niki', 'Lauti', 'Santi', 'Nico'
+];
+
+function normalizePlayerName(name) {
+  if (!name) return null;
+  const lower = name.toLowerCase().trim();
+  for (const canonical of CANONICAL_NAMES) {
+    if (canonical.toLowerCase() === lower) return canonical;
+  }
+  // Si no hay match exacto (case-insensitive), devolver el original
+  return name;
+}
+
 /**
  * Extrae un posible apodo/nombre del texto OCR del panel superior
  * Se filtra ruido conocido (posiciones, etiquetas) y se devuelve
@@ -313,4 +328,4 @@ function validateStats(stats) {
   };
 }
 
-module.exports = { parseStats, extractSelectedPlayer, validateStats, extractValoracion };
+module.exports = { parseStats, extractSelectedPlayer, validateStats, extractValoracion, normalizePlayerName, CANONICAL_NAMES };

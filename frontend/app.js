@@ -1,6 +1,11 @@
 const API_URL = 'http://localhost:3001/api';
 const FETCH_TIMEOUT = 30000;
 
+const CANONICAL_NAMES = [
+  'Adri', 'Charly', 'Nacho', 'Jere', 'Facu', 'Valen', 'Lucas',
+  'Davi', 'Pepo', 'Niki', 'Lauti', 'Santi', 'Nico'
+];
+
 const POSITIONS = [
   { id: '', label: '— Sin posición' },
   { id: 'GK', label: 'GK - Arquero' },
@@ -389,7 +394,14 @@ function handleStatInputChange(e) {
   if (!input.dataset.resultIdx || !input.dataset.stat) return;
   const idx = parseInt(input.dataset.resultIdx);
   const stat = input.dataset.stat;
-  const val = input.type === 'number' ? (input.value === '' ? null : parseFloat(input.value)) : input.value;
+  let val;
+  if (input.type === 'checkbox') {
+    val = input.checked ? 1 : 0;
+  } else if (input.type === 'number') {
+    val = input.value === '' ? null : parseFloat(input.value);
+  } else {
+    val = input.value;
+  }
   if (state.results[idx] && state.results[idx].data) {
     state.results[idx].data[stat] = val;
   }
@@ -412,11 +424,15 @@ function renderResultBody(result, idx) {
   }
 
   // Player name editable
+  const nameOpts = CANONICAL_NAMES.map(n =>
+    `<option value="${n}" ${d.jugador === n ? 'selected' : ''}>${n}</option>`
+  ).join('');
   html += `
     <div class="stat-cell player-name-cell">
       <div class="stat-label">👤 Jugador</div>
-      <input type="text" class="stat-input" value="${d.jugador || ''}"
-        data-result-idx="${idx}" data-stat="jugador" />
+      <select class="stat-input" data-result-idx="${idx}" data-stat="jugador">
+        ${nameOpts}
+      </select>
     </div>
   `;
 
@@ -454,6 +470,11 @@ function renderResultBody(result, idx) {
     { key: 'distancia_sprint_km',  label: 'Dist. sprint km',       emoji: '⚡', step: 0.1 },
   ];
 
+  const igConfig = [
+    { key: 'mvp_ig', label: 'MVP IG', emoji: '📸' },
+    { key: 'part_ig', label: 'PART IG', emoji: '📱' },
+  ];
+
   html += '<div class="stats-grid">';
   for (const s of statsConfig) {
     const val = d[s.key];
@@ -466,6 +487,22 @@ function renderResultBody(result, idx) {
           step="${s.step}" min="0" max="${s.key === 'valoracion' ? 10 : 99999}"
           value="${inputVal}" placeholder="—"
           data-result-idx="${idx}" data-stat="${s.key}" />
+      </div>
+    `;
+  }
+  html += '</div>';
+
+  // Instagram fields row
+  html += '<div class="stats-grid" style="margin-top:8px;grid-template-columns:repeat(2,1fr);max-width:300px">';
+  for (const s of igConfig) {
+    const checked = d[s.key] ? 'checked' : '';
+    html += `
+      <div class="stat-cell">
+        <div class="stat-label">${s.emoji} ${s.label}</div>
+        <label class="ig-check-label">
+          <input type="checkbox" class="ig-checkbox" ${checked}
+            data-result-idx="${idx}" data-stat="${s.key}" /> Sí
+        </label>
       </div>
     `;
   }
@@ -755,6 +792,8 @@ const HISTORY_STAT_FIELDS = [
   { key: 'tiros', label: 'Tiros', type: 'number', step: 1, min: 0 },
   { key: 'regates', label: 'Reg.', type: 'number', step: 1, min: 0 },
   { key: 'entradas', label: 'Entr.', type: 'number', step: 1, min: 0 },
+  { key: 'mvp_ig', label: 'MVP IG', type: 'checkbox' },
+  { key: 'part_ig', label: 'Part IG', type: 'checkbox' },
 ];
 
 function renderMatchPlayers(container, stats, matchId, matchInfo) {
@@ -1063,13 +1102,22 @@ function enterEditMode(container, stats, matchId, matchInfo) {
     html += `<td><select class="match-edit-input pos-input edit-pos" data-id="${s.id}">
       ${posOpts.replace(`value="${s.posicion || ''}"`, `value="${s.posicion || ''}" selected`)}
     </select></td>`;
-    html += `<td><input class="match-edit-input edit-jugador" data-id="${s.id}" value="${s.jugador || ''}" /></td>`;
+    const nameOpts = CANONICAL_NAMES.map(n =>
+      `<option value="${n}" ${s.jugador === n ? 'selected' : ''}>${n}</option>`
+    ).join('');
+    html += `<td><select class="match-edit-input edit-jugador" data-id="${s.id}">${nameOpts}</select></td>`;
     for (const f of HISTORY_STAT_FIELDS.slice(1)) {
-      const val = s[f.key];
-      const inputVal = val !== null && val !== undefined ? val : '';
-      html += `<td><input class="match-edit-input" data-id="${s.id}" data-key="${f.key}"
-        type="${f.type}" step="${f.step || ''}" min="${f.min ?? ''}" max="${f.max ?? ''}"
-        value="${inputVal}" /></td>`;
+      if (f.type === 'checkbox') {
+        const checked = s[f.key] ? 'checked' : '';
+        html += `<td><input class="match-edit-input ig-checkbox" data-id="${s.id}" data-key="${f.key}"
+          type="checkbox" ${checked} /></td>`;
+      } else {
+        const val = s[f.key];
+        const inputVal = val !== null && val !== undefined ? val : '';
+        html += `<td><input class="match-edit-input" data-id="${s.id}" data-key="${f.key}"
+          type="${f.type}" step="${f.step || ''}" min="${f.min ?? ''}" max="${f.max ?? ''}"
+          value="${inputVal}" /></td>`;
+      }
     }
     html += '</tr>';
   }
@@ -1097,6 +1145,8 @@ function enterEditMode(container, stats, matchId, matchInfo) {
         updates[id].jugador = inp.value;
       } else if (inp.classList.contains('edit-pos')) {
         updates[id].posicion = inp.value;
+      } else if (inp.classList.contains('ig-checkbox')) {
+        updates[id][inp.dataset.key] = inp.checked ? 1 : 0;
       } else {
         const key = inp.dataset.key;
         const val = inp.value === '' ? null : parseFloat(inp.value);
@@ -2185,9 +2235,25 @@ async function loadBarChart() {
   }
 }
 
-const RADAR_KEYS = ['valoracion', 'goles', 'asistencias', 'pases', 'precision_pases', 'regates', 'entradas', 'tiros', 'minutos_jugados', 'posesion_ganada'];
-const RADAR_LABELS = { valoracion: 'Valoración', goles: 'Goles', asistencias: 'Asistencias', pases: 'Pases', precision_pases: 'Precisión %', regates: 'Regates', entradas: 'Entradas', tiros: 'Tiros', minutos_jugados: 'Minutos', posesion_ganada: 'Pos. Ganada' };
-const RADAR_NORMALIZERS = { valoracion: 10, goles: 5, asistencias: 5, pases: 150, precision_pases: 100, regates: 30, entradas: 30, tiros: 20, minutos_jugados: 120, posesion_ganada: 20 };
+const RADAR_KEYS = ['tiros', 'precision_tiros', 'pases', 'precision_pases', 'regates', 'exito_regates', 'entradas', 'exito_entradas', 'faltas', 'posesion_ganada', 'posesion_perdida', 'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'goles', 'asistencias', 'minutos_jugados'];
+const RADAR_LABELS = {
+  valoracion: 'Valoración', goles: 'Goles', asistencias: 'Asistencias',
+  pases: 'Pases', precision_pases: 'Precisión %', regates: 'Regates',
+  exito_regates: 'Éxito regates %', entradas: 'Entradas', exito_entradas: 'Éxito entradas %',
+  tiros: 'Tiros', precision_tiros: 'Precisión tiros %', faltas: 'Faltas',
+  posesion_ganada: 'Pos. Ganada', posesion_perdida: 'Pos. Perdida',
+  distancia_recorrida_km: 'Dist. recorrida', distancia_sprint_km: 'Dist. sprint',
+  minutos_jugados: 'Minutos'
+};
+const RADAR_NORMALIZERS = {
+  valoracion: 10, goles: 5, asistencias: 5,
+  pases: 150, precision_pases: 100, regates: 30,
+  exito_regates: 100, entradas: 30, exito_entradas: 100,
+  tiros: 20, precision_tiros: 100, faltas: 10,
+  posesion_ganada: 20, posesion_perdida: 20,
+  distancia_recorrida_km: 15, distancia_sprint_km: 5,
+  minutos_jugados: 120
+};
 
 function getRadarSelectedKeys() {
   return Array.from(document.querySelectorAll('.radar-check input[type="checkbox"]:checked')).map(cb => cb.dataset.rkey);

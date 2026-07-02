@@ -64,6 +64,9 @@ async function getDB() {
   try { db.run("ALTER TABLE matches ADD COLUMN goles_contra INTEGER DEFAULT 0"); } catch (e) {}
   // Season column
   try { db.run("ALTER TABLE matches ADD COLUMN temporada TEXT DEFAULT ''"); } catch (e) {}
+  // Instagram fields
+  try { db.run("ALTER TABLE stats ADD COLUMN mvp_ig INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.run("ALTER TABLE stats ADD COLUMN part_ig INTEGER DEFAULT 0"); } catch (e) {}
 
   saveDB();
   return db;
@@ -93,7 +96,8 @@ async function _insertStats(stats, matchId = null) {
     'pases', 'precision_pases', 'regates', 'exito_regates',
     'entradas', 'exito_entradas', 'fueras_de_juego', 'faltas',
     'posesion_ganada', 'posesion_perdida', 'minutos_jugados',
-    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion'
+    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion',
+    'mvp_ig', 'part_ig'
   ];
 
   const placeholders = fields.map(() => '?').join(', ');
@@ -185,7 +189,8 @@ async function _updateStats(id, data) {
     'pases', 'precision_pases', 'regates', 'exito_regates',
     'entradas', 'exito_entradas', 'fueras_de_juego', 'faltas',
     'posesion_ganada', 'posesion_perdida', 'minutos_jugados',
-    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion'
+    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion',
+    'mvp_ig', 'part_ig'
   ];
   const sets = allowed.filter(f => f in data).map(f => `${f} = ?`);
   const values = allowed.filter(f => f in data).map(f => data[f]);
