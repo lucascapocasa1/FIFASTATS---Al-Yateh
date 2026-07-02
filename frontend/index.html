@@ -102,9 +102,8 @@
           <input type="text" id="match-rival" class="match-input" placeholder="Rival (ej: vs SUB21)" />
           <input type="text" id="match-desc" class="match-input" placeholder="Descripción (ej: Fecha 1 - 2da Division)" />
           <input type="date" id="match-fecha" class="match-input match-date" />
-          <select id="match-season" class="match-input match-season">
-            <option value="">— Sin temporada —</option>
-          </select>
+          <input id="match-season" class="match-input match-season" list="season-list" placeholder="Temporada (ej: 2da Division) o amistoso" />
+          <datalist id="season-list"></datalist>
           <div class="match-result-input">
             <label class="result-label">Resultado:</label>
             <input type="number" id="match-gf" class="match-input score-input" min="0" value="0" placeholder="0" />
@@ -264,9 +263,8 @@
             <span class="search-icon">🔍</span>
             <input type="text" id="history-search" class="history-search-input" placeholder="Buscar rival..." />
           </div>
-          <select id="history-season" class="history-season-select">
-            <option value="">Todas las temporadas</option>
-          </select>
+          <input id="history-season" class="history-season-select" list="history-season-list" placeholder="Todas las temporadas" />
+          <datalist id="history-season-list"></datalist>
         </div>
         <div id="history-container">
           <div class="empty-state">

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: fifa-stats
+    env: docker
+    repo: https://github.com/TU_USUARIO/fifa-stats
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fifa-stats-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: fifa-stats-db
+    plan: free
+    databaseName: fifa_stats
+    ipAllowList: []

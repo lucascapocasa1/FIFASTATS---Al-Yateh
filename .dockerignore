@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.git
+*.md
+.env
+fifa_stats.db
+uploads/*
+!uploads/.gitkeep

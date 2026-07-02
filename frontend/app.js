@@ -1,10 +1,38 @@
-const API_URL = 'http://localhost:3001/api';
+const API_URL = window.location.port === '5500' ? 'http://localhost:3001/api' : '/api';
 const FETCH_TIMEOUT = 30000;
 
 const CANONICAL_NAMES = [
   'Adri', 'Charly', 'Nacho', 'Jere', 'Facu', 'Valen', 'Lucas',
   'Davi', 'Pepo', 'Niki', 'Lauti', 'Santi', 'Nico'
 ];
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]) + 1;
+    }
+  }
+  return dp[m][n];
+}
+
+function findClosestName(name) {
+  if (!name) return null;
+  const lower = name.toLowerCase().trim();
+  for (const c of CANONICAL_NAMES) {
+    if (c.toLowerCase() === lower) return c;
+  }
+  let best = null, bestDist = Infinity;
+  for (const c of CANONICAL_NAMES) {
+    const dist = levenshtein(lower, c.toLowerCase());
+    if (dist < bestDist) { bestDist = dist; best = c; }
+  }
+  const threshold = Math.max(3, Math.floor(lower.length * 0.4));
+  return best && bestDist <= threshold ? best : null;
+}
 
 const POSITIONS = [
   { id: '', label: '— Sin posición' },
@@ -423,9 +451,10 @@ function renderResultBody(result, idx) {
     html += `<div class="warning-box">⚠ ${result.warnings.join(' | ')}</div>`;
   }
 
-  // Player name editable
+  // Player name editable — auto-select closest match
+  const autoName = findClosestName(d.jugador) || d.jugador;
   const nameOpts = CANONICAL_NAMES.map(n =>
-    `<option value="${n}" ${d.jugador === n ? 'selected' : ''}>${n}</option>`
+    `<option value="${n}" ${autoName === n ? 'selected' : ''}>${n}</option>`
   ).join('');
   html += `
     <div class="stat-cell player-name-cell">
@@ -610,6 +639,12 @@ async function saveAllPlayers() {
       toast(`✅ ${savedCount} guardados, pero algunos fallaron`, 'warning');
     } else {
       toast(`✅ ${savedCount} jugador(es) guardado(s)`, 'success');
+      // Limpiar resultados
+      state.results = [];
+      state.files = [];
+      state._matchId = null;
+      renderPreviews();
+      document.getElementById('results-card').style.display = 'none';
     }
 
   } catch (err) {
@@ -625,23 +660,21 @@ async function loadSeasons() {
     const res = await fetchWithTimeout(`${API_URL}/seasons`);
     const data = await res.json();
     const seasons = data.data || [];
-    // Populate the upload form season select
-    const matchSeason = document.getElementById('match-season');
-    matchSeason.innerHTML = '<option value="">— Sin temporada —</option>';
+    // Populate the upload form season datalist
+    const seasonList = document.getElementById('season-list');
+    seasonList.innerHTML = '';
     seasons.forEach(s => {
       const opt = document.createElement('option');
       opt.value = s;
-      opt.textContent = s;
-      matchSeason.appendChild(opt);
+      seasonList.appendChild(opt);
     });
-    // Populate the history filter season select
-    const historySeason = document.getElementById('history-season');
-    historySeason.innerHTML = '<option value="">Todas las temporadas</option>';
+    // Populate the history filter season datalist
+    const historySeasonList = document.getElementById('history-season-list');
+    historySeasonList.innerHTML = '';
     seasons.forEach(s => {
       const opt = document.createElement('option');
       opt.value = s;
-      opt.textContent = s;
-      historySeason.appendChild(opt);
+      historySeasonList.appendChild(opt);
     });
   } catch (e) {
     console.error('Error cargando temporadas:', e);
@@ -962,7 +995,7 @@ function renderMatchReport(stats, mvpName, matchInfo) {
 }
 
 // ── Image Gallery ──
-const UPLOADS_URL = API_URL.replace('/api', '/uploads');
+const UPLOADS_URL = window.location.port === '5500' ? 'http://localhost:3001/uploads' : '/uploads';
 
 function renderImageGallery(imagenesStr, matchId) {
   const list = imagenesStr ? imagenesStr.split(',').filter(Boolean) : [];
@@ -1166,10 +1199,11 @@ function enterEditMode(container, stats, matchId, matchInfo) {
     html += `<td><select class="match-edit-input pos-input edit-pos" data-id="${s.id}">
       ${posOpts.replace(`value="${s.posicion || ''}"`, `value="${s.posicion || ''}" selected`)}
     </select></td>`;
-    const nameOpts = CANONICAL_NAMES.map(n =>
-      `<option value="${n}" ${s.jugador === n ? 'selected' : ''}>${n}</option>`
+    const editAutoName = findClosestName(s.jugador) || s.jugador;
+    const editNameOpts = CANONICAL_NAMES.map(n =>
+      `<option value="${n}" ${editAutoName === n ? 'selected' : ''}>${n}</option>`
     ).join('');
-    html += `<td><select class="match-edit-input edit-jugador" data-id="${s.id}">${nameOpts}</select></td>`;
+    html += `<td><select class="match-edit-input edit-jugador" data-id="${s.id}">${editNameOpts}</select></td>`;
     for (const f of HISTORY_STAT_FIELDS.slice(1)) {
       if (f.type === 'checkbox') {
         const checked = s[f.key] ? 'checked' : '';
@@ -1554,7 +1588,9 @@ async function loadDashboardPlayers() {
   const currentValue = select.value;
   try {
     const res = await fetchWithTimeout(`${API_URL}/players`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const data = await res.json();
+    if (!data.data) throw new Error('Respuesta inválida del servidor');
     const players = data.data || [];
     select.innerHTML = '<option value="">-- Seleccionar --</option>';
     select2.innerHTML = '<option value="">-- Seleccionar --</option>';
@@ -1571,6 +1607,11 @@ async function loadDashboardPlayers() {
     if (currentValue) select.value = currentValue;
   } catch (e) {
     console.error('Error cargando jugadores:', e);
+    const empty = document.getElementById('dash-empty');
+    if (empty) {
+      empty.style.display = 'block';
+      empty.innerHTML = `<span class="empty-icon">❌</span><p>Error cargando jugadores: ${e.message}</p>`;
+    }
   }
 }
 

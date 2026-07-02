@@ -1,0 +1,383 @@
+const initSqlJs = require('sql.js');
+const fs = require('fs');
+const path = require('path');
+
+const DB_PATH = path.join(__dirname, 'fifa_stats.db');
+
+let db = null;
+
+async function getDB() {
+  if (db) return db;
+
+  const SQL = await initSqlJs();
+
+  if (fs.existsSync(DB_PATH)) {
+    const fileBuffer = fs.readFileSync(DB_PATH);
+    db = new SQL.Database(fileBuffer);
+  } else {
+    db = new SQL.Database();
+  }
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rival TEXT NOT NULL,
+      descripcion TEXT,
+      fecha TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      match_id INTEGER,
+      jugador TEXT NOT NULL,
+      goles INTEGER,
+      asistencias INTEGER,
+      tiros INTEGER,
+      precision_tiros INTEGER,
+      pases INTEGER,
+      precision_pases INTEGER,
+      regates INTEGER,
+      exito_regates INTEGER,
+      entradas INTEGER,
+      exito_entradas INTEGER,
+      fueras_de_juego INTEGER,
+      faltas INTEGER,
+      posesion_ganada INTEGER,
+      posesion_perdida INTEGER,
+      minutos_jugados INTEGER,
+      distancia_recorrida_km REAL,
+      distancia_sprint_km REAL,
+      valoracion REAL,
+      fecha TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (match_id) REFERENCES matches(id)
+    )
+  `);
+
+  // Migrations for old DBs
+  try { db.run('ALTER TABLE stats ADD COLUMN match_id INTEGER REFERENCES matches(id)'); } catch (e) {}
+  try { db.run("ALTER TABLE stats ADD COLUMN posicion TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN goles_favor INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN goles_contra INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN temporada TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN notas TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN detalle_goles TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE matches ADD COLUMN imagenes TEXT DEFAULT ''"); } catch (e) {}
+  try { db.run("ALTER TABLE stats ADD COLUMN mvp_ig INTEGER DEFAULT 0"); } catch (e) {}
+  try { db.run("ALTER TABLE stats ADD COLUMN part_ig INTEGER DEFAULT 0"); } catch (e) {}
+
+  saveDB();
+  return db;
+}
+
+let writeQueue = Promise.resolve();
+
+function serialized(fn) {
+  return async function (...args) {
+    const result = writeQueue.then(() => fn(...args));
+    writeQueue = result.catch(() => {});
+    return result;
+  };
+}
+
+function saveDB() {
+  if (!db) return;
+  const data = db.export();
+  fs.writeFileSync(DB_PATH, Buffer.from(data));
+}
+
+async function _insertStats(stats, matchId = null) {
+  const d = await getDB();
+  const fields = [
+    'match_id', 'jugador', 'goles', 'asistencias', 'tiros', 'precision_tiros',
+    'pases', 'precision_pases', 'regates', 'exito_regates',
+    'entradas', 'exito_entradas', 'fueras_de_juego', 'faltas',
+    'posesion_ganada', 'posesion_perdida', 'minutos_jugados',
+    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion',
+    'mvp_ig', 'part_ig'
+  ];
+  const placeholders = fields.map(() => '?').join(', ');
+  const values = fields.map(f => f === 'match_id' ? matchId : (stats[f] ?? null));
+  d.run(`INSERT INTO stats (${fields.join(', ')}) VALUES (${placeholders})`, values);
+  const result = d.exec('SELECT MAX(id) as id FROM stats');
+  const id = result[0]?.values[0][0];
+  saveDB();
+  return id;
+}
+
+async function _createMatch(rival, descripcion, fecha, golesFavor = 0, golesContra = 0, temporada = '', notas = '', detalleGoles = '') {
+  const d = await getDB();
+  d.run('INSERT INTO matches (rival, descripcion, fecha, goles_favor, goles_contra, temporada, notas, detalle_goles) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [rival, descripcion || '', fecha, golesFavor, golesContra, temporada, notas, detalleGoles]);
+  const result = d.exec('SELECT MAX(id) as id FROM matches');
+  const id = result[0]?.values[0][0];
+  saveDB();
+  return id;
+}
+
+async function _updateStats(id, data) {
+  const d = await getDB();
+  const allowed = [
+    'jugador', 'goles', 'asistencias', 'tiros', 'precision_tiros',
+    'pases', 'precision_pases', 'regates', 'exito_regates',
+    'entradas', 'exito_entradas', 'fueras_de_juego', 'faltas',
+    'posesion_ganada', 'posesion_perdida', 'minutos_jugados',
+    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion',
+    'mvp_ig', 'part_ig'
+  ];
+  const sets = allowed.filter(f => f in data).map(f => `${f} = ?`);
+  const values = allowed.filter(f => f in data).map(f => data[f]);
+  if (!sets.length) throw new Error('No hay campos para actualizar');
+  values.push(id);
+  d.run(`UPDATE stats SET ${sets.join(', ')} WHERE id = ?`, values);
+  saveDB();
+}
+
+async function _deleteStats(id) {
+  const d = await getDB();
+  d.run('DELETE FROM stats WHERE id = ?', [id]);
+  saveDB();
+}
+
+async function _updateMatch(id, data) {
+  const d = await getDB();
+  const allowed = ['rival', 'descripcion', 'fecha', 'goles_favor', 'goles_contra', 'temporada', 'notas', 'detalle_goles'];
+  const sets = allowed.filter(f => f in data).map(f => `${f} = ?`);
+  const values = allowed.filter(f => f in data).map(f => data[f]);
+  if (!sets.length) throw new Error('No hay campos para actualizar');
+  values.push(id);
+  d.run(`UPDATE matches SET ${sets.join(', ')} WHERE id = ?`, values);
+  saveDB();
+}
+
+async function _deleteMatch(matchId) {
+  const d = await getDB();
+  d.run('DELETE FROM stats WHERE match_id = ?', [matchId]);
+  d.run('DELETE FROM matches WHERE id = ?', [matchId]);
+  saveDB();
+}
+
+async function _addMatchImage(matchId, filename) {
+  const d = await getDB();
+  const match = await _getMatchById(matchId);
+  if (!match) throw new Error('Partido no encontrado');
+  const existing = match.imagenes || '';
+  const list = existing ? existing.split(',').filter(Boolean) : [];
+  if (!list.includes(filename)) list.push(filename);
+  d.run('UPDATE matches SET imagenes = ? WHERE id = ?', [list.join(','), matchId]);
+  saveDB();
+}
+
+async function _removeMatchImage(matchId, filename) {
+  const d = await getDB();
+  const match = await _getMatchById(matchId);
+  if (!match) throw new Error('Partido no encontrado');
+  const existing = match.imagenes || '';
+  const list = existing.split(',').filter(Boolean).filter(f => f !== filename);
+  d.run('UPDATE matches SET imagenes = ? WHERE id = ?', [list.join(','), matchId]);
+  saveDB();
+}
+
+async function _getMatchById(matchId) {
+  const d = await getDB();
+  const result = d.exec(`
+    SELECT m.*, COUNT(s.id) as jugadores
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    WHERE m.id = ?
+    GROUP BY m.id
+  `, [matchId]);
+  if (!result.length || !result[0].values.length) return null;
+  const { columns, values } = result[0];
+  const obj = {};
+  columns.forEach((col, i) => { obj[col] = values[0][i]; });
+  return obj;
+}
+
+// ── Direct (non-serialized) read functions ──
+
+async function getMatches(season = '') {
+  const d = await getDB();
+  const seasonFilter = season ? ` WHERE m.temporada = '${season.replace(/'/g, "''")}'` : '';
+  const result = d.exec(`
+    SELECT m.*, COUNT(s.id) as jugadores
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    ${seasonFilter}
+    GROUP BY m.id
+    ORDER BY m.created_at DESC
+  `);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
+async function getMatchStats(matchId) {
+  const d = await getDB();
+  const stmt = d.prepare("SELECT * FROM stats WHERE match_id = ? ORDER BY CASE posicion WHEN '' THEN 1 ELSE 0 END, posicion ASC, jugador ASC");
+  stmt.bind([matchId]);
+  const values = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    if (row.match_id !== null) row.match_id = Number(row.match_id);
+    values.push(row);
+  }
+  stmt.free();
+  return values;
+}
+
+async function getMatchesSummary(season = '') {
+  const d = await getDB();
+  const seasonFilter = season ? ` WHERE m.temporada = '${season.replace(/'/g, "''")}'` : '';
+  const result = d.exec(`
+    SELECT
+      m.id, m.rival, m.descripcion, m.fecha, m.created_at, m.temporada,
+      COUNT(s.id) as jugadores,
+      ROUND(AVG(s.valoracion), 1) as avg_valoracion
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    ${seasonFilter}
+    GROUP BY m.id
+    ORDER BY m.fecha ASC
+  `);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
+async function getLeaderboard() {
+  const d = await getDB();
+  const result = d.exec(`
+    SELECT
+      jugador,
+      COUNT(*) as partidos,
+      ROUND(AVG(goles), 1) as avg_goles,
+      ROUND(AVG(asistencias), 1) as avg_asistencias,
+      ROUND(AVG(valoracion), 1) as avg_valoracion,
+      ROUND(AVG(tiros), 1) as avg_tiros,
+      ROUND(AVG(precision_tiros), 0) as avg_precision_tiros,
+      ROUND(AVG(pases), 1) as avg_pases,
+      ROUND(AVG(precision_pases), 0) as avg_precision_pases,
+      ROUND(AVG(regates), 1) as avg_regates,
+      ROUND(AVG(exito_regates), 0) as avg_exito_regates,
+      ROUND(AVG(entradas), 1) as avg_entradas,
+      ROUND(AVG(exito_entradas), 0) as avg_exito_entradas,
+      ROUND(AVG(minutos_jugados), 1) as avg_minutos,
+      ROUND(AVG(distancia_recorrida_km), 1) as avg_distancia,
+      ROUND(AVG(distancia_sprint_km), 1) as avg_sprint,
+      ROUND(AVG(fueras_de_juego), 1) as avg_fueras_de_juego,
+      ROUND(AVG(faltas), 1) as avg_faltas,
+      ROUND(AVG(posesion_ganada), 1) as avg_posesion_ganada,
+      ROUND(AVG(posesion_perdida), 1) as avg_posesion_perdida,
+      SUM(goles) as total_goles,
+      SUM(asistencias) as total_asistencias
+    FROM stats
+    GROUP BY LOWER(jugador)
+    ORDER BY avg_valoracion DESC
+  `);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
+async function getStatsByPlayer(playerName) {
+  const d = await getDB();
+  const stmt = d.prepare(
+    `SELECT s.*, m.rival, m.fecha as match_fecha
+     FROM stats s
+     LEFT JOIN matches m ON m.id = s.match_id
+     WHERE LOWER(s.jugador) = LOWER(?)
+     ORDER BY s.fecha ASC`
+  );
+  stmt.bind([playerName]);
+  const values = [];
+  while (stmt.step()) {
+    values.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return values;
+}
+
+async function getTeamSummary() {
+  const d = await getDB();
+  const result = d.exec(`
+    SELECT
+      m.id, m.rival, m.fecha, m.goles_favor, m.goles_contra,
+      COUNT(s.id) as jugadores,
+      ROUND(AVG(s.valoracion), 2) as avg_valoracion,
+      ROUND(AVG(s.pases), 1) as avg_pases,
+      ROUND(AVG(s.precision_pases), 1) as avg_precision_pases,
+      ROUND(AVG(s.posesion_ganada), 1) as avg_posesion_ganada,
+      ROUND(AVG(s.posesion_perdida), 1) as avg_posesion_perdida,
+      ROUND(AVG(s.tiros), 1) as avg_tiros,
+      ROUND(AVG(s.entradas), 1) as avg_entradas,
+      ROUND(AVG(s.regates), 1) as avg_regates,
+      ROUND(AVG(s.faltas), 1) as avg_faltas,
+      ROUND(AVG(s.minutos_jugados), 0) as avg_minutos,
+      SUM(s.goles) as total_goles,
+      SUM(s.asistencias) as total_asistencias
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    GROUP BY m.id
+    ORDER BY m.fecha ASC
+  `);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
+async function getAllPlayers() {
+  const d = await getDB();
+  const result = d.exec('SELECT DISTINCT jugador FROM stats ORDER BY jugador ASC');
+  if (!result.length || !result[0].values.length) return [];
+  return result[0].values.map(row => row[0]);
+}
+
+async function getSeasons() {
+  const d = await getDB();
+  const result = d.exec("SELECT DISTINCT temporada FROM matches WHERE temporada != '' ORDER BY temporada DESC");
+  if (!result.length || !result[0].values.length) return [];
+  return result[0].values.map(row => row[0]);
+}
+
+async function getAllStats() {
+  const d = await getDB();
+  const result = d.exec('SELECT * FROM stats ORDER BY fecha DESC');
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => {
+    const obj = {};
+    columns.forEach((col, i) => { obj[col] = row[i]; });
+    return obj;
+  });
+}
+
+const insertStats = serialized(_insertStats);
+const createMatch = serialized(_createMatch);
+const updateStats = serialized(_updateStats);
+const updateMatch = serialized(_updateMatch);
+const deleteStats = serialized(_deleteStats);
+const deleteMatch = serialized(_deleteMatch);
+const addMatchImage = serialized(_addMatchImage);
+const removeMatchImage = serialized(_removeMatchImage);
+const getMatchById = serialized(_getMatchById);
+
+module.exports = { insertStats, createMatch, updateStats, updateMatch, getMatchById, getMatches, getMatchStats, getMatchesSummary, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers, getSeasons, getTeamSummary, addMatchImage, removeMatchImage };

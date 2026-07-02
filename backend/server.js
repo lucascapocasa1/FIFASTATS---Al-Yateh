@@ -20,12 +20,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Serve uploaded images
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Rutas
+// Serve frontend static files (for production / Render)
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Rutas API
 app.use('/api', routes);
 
-// 404
-app.use((req, res) => {
-  res.status(404).json({ error: 'Ruta no encontrada' });
+// Catch-all: serve index.html for SPA-like navigation
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend', 'index.html'));
 });
 
 // Error handler global
