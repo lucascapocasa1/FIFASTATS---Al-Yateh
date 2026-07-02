@@ -7,7 +7,7 @@ async function getPool() {
   const connectionString = process.env.DATABASE_URL;
   pool = new Pool({
     connectionString,
-    ssl: connectionString.includes('render.com') ? { rejectUnauthorized: false } : false,
+    ssl: /localhost|127\.0\.0\.1|::1/.test(connectionString) ? false : { rejectUnauthorized: false },
   });
 
   await pool.query(`
