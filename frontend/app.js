@@ -2238,7 +2238,7 @@ async function loadBarChart() {
 const RADAR_KEYS = ['tiros', 'precision_tiros', 'pases', 'precision_pases', 'regates', 'exito_regates', 'entradas', 'exito_entradas', 'faltas', 'posesion_ganada', 'posesion_perdida', 'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'goles', 'asistencias', 'minutos_jugados'];
 const RADAR_LABELS = {
   valoracion: 'Valoración', goles: 'Goles', asistencias: 'Asistencias',
-  pases: 'Pases', precision_pases: 'Precisión %', regates: 'Regates',
+  pases: 'Pases', precision_pases: 'Precisión pases %', regates: 'Regates',
   exito_regates: 'Éxito regates %', entradas: 'Entradas', exito_entradas: 'Éxito entradas %',
   tiros: 'Tiros', precision_tiros: 'Precisión tiros %', faltas: 'Faltas',
   posesion_ganada: 'Pos. Ganada', posesion_perdida: 'Pos. Perdida',
@@ -2246,12 +2246,12 @@ const RADAR_LABELS = {
   minutos_jugados: 'Minutos'
 };
 const RADAR_NORMALIZERS = {
-  valoracion: 10, goles: 5, asistencias: 5,
-  pases: 150, precision_pases: 100, regates: 30,
-  exito_regates: 100, entradas: 30, exito_entradas: 100,
-  tiros: 20, precision_tiros: 100, faltas: 10,
-  posesion_ganada: 20, posesion_perdida: 20,
-  distancia_recorrida_km: 15, distancia_sprint_km: 5,
+  valoracion: 10, goles: 3, asistencias: 3,
+  pases: 60, precision_pases: 100, regates: 12,
+  exito_regates: 100, entradas: 12, exito_entradas: 100,
+  tiros: 8, precision_tiros: 100, faltas: 4,
+  posesion_ganada: 10, posesion_perdida: 10,
+  distancia_recorrida_km: 20, distancia_sprint_km: 6,
   minutos_jugados: 120
 };
 
@@ -2297,26 +2297,31 @@ function updateChartRadar(stats1, stats2) {
   const datasets = [{
     label: stats1[0]?.jugador || 'Jugador',
     data: data1,
-    backgroundColor: 'rgba(0,195,255,0.15)',
+    backgroundColor: 'rgba(0,195,255,0.12)',
     borderColor: '#00c3ff',
-    borderWidth: 2,
+    borderWidth: 2.5,
     pointBackgroundColor: '#00c3ff',
     pointBorderColor: isLight ? '#fff' : '#0f1117',
     pointBorderWidth: 2,
     pointRadius: 4,
+    pointHoverRadius: 7,
+    pointHoverBorderWidth: 3,
   }];
 
   if (data2) {
     datasets.push({
       label: stats2[0]?.jugador || 'Jugador 2',
       data: data2,
-      backgroundColor: 'rgba(255,214,0,0.15)',
+      backgroundColor: 'rgba(255,214,0,0.12)',
       borderColor: '#ffd600',
-      borderWidth: 2,
+      borderWidth: 2.5,
       pointBackgroundColor: '#ffd600',
       pointBorderColor: isLight ? '#fff' : '#0f1117',
       pointBorderWidth: 2,
       pointRadius: 4,
+      pointHoverRadius: 7,
+      pointHoverBorderWidth: 3,
+      borderDash: [4, 3],
     });
   }
 
@@ -2327,15 +2332,33 @@ function updateChartRadar(stats1, stats2) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: textColor, font: { size: 12 } } },
+        legend: {
+          labels: { color: textColor, font: { size: 13, weight: '600' }, padding: 16 }
+        },
+        title: {
+          display: true,
+          text: '🕸️ Perfil del jugador',
+          color: textColor,
+          font: { size: 14, weight: '600' },
+          padding: { bottom: 12 }
+        },
         tooltip: {
+          backgroundColor: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,17,23,0.95)',
+          titleColor: textColor,
+          bodyColor: textColor,
+          borderColor: gridColor,
+          borderWidth: 1,
+          padding: 10,
           callbacks: {
             label: (context) => {
               const i = context.dataIndex;
               const ds = context.dataset;
               const raw = ds.data[i];
               const label = radarLabels[i];
-              return `${ds.label} — ${label}: ${label.includes('%') ? raw.toFixed(0) + '%' : raw.toFixed(1)}`;
+              const statKey = selected[i];
+              const norm = RADAR_NORMALIZERS[statKey] || 10;
+              const realVal = (raw / 10 * norm).toFixed(1);
+              return `${ds.label} — ${label}: ${realVal}`;
             }
           }
         }
@@ -2344,10 +2367,36 @@ function updateChartRadar(stats1, stats2) {
         r: {
           beginAtZero: true,
           max: 10,
-          ticks: { display: false, stepSize: 2 },
-          grid: { color: gridColor },
-          angleLines: { color: gridColor },
-          pointLabels: { color: textColor, font: { size: 11 } }
+          backgroundColor: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+          ticks: {
+            display: true,
+            backdropColor: 'transparent',
+            color: isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.12)',
+            font: { size: 9 },
+            stepSize: 2,
+            z: 1
+          },
+          grid: {
+            color: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+            circular: true
+          },
+          angleLines: {
+            color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
+          },
+          pointLabels: {
+            color: textColor,
+            font: { size: 12, weight: '500' },
+            padding: 8
+          }
+        }
+      },
+      elements: {
+        line: {
+          borderWidth: 2.5
+        },
+        point: {
+          hoverRadius: 7,
+          hoverBorderWidth: 3
         }
       }
     }
@@ -2505,27 +2554,76 @@ async function loadPlayerData(playerName) {
         datasets: [{
           label: playerName,
           data: rData,
-          backgroundColor: 'rgba(0,195,255,0.15)',
+          backgroundColor: 'rgba(0,195,255,0.12)',
           borderColor: '#00c3ff',
-          borderWidth: 2,
+          borderWidth: 2.5,
           pointBackgroundColor: '#00c3ff',
-          pointRadius: 3,
+          pointBorderColor: isLight ? '#fff' : '#0f1117',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 7,
+          pointHoverBorderWidth: 3,
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { color: textColor, font: { size: 11 } } },
-          title: { display: true, text: '🕸️ Perfil de stats', color: textColor, font: { size: 13 } }
+          legend: {
+            labels: { color: textColor, font: { size: 12, weight: '600' } }
+          },
+          title: {
+            display: true,
+            text: '🕸️ Perfil de stats',
+            color: textColor,
+            font: { size: 14, weight: '600' },
+            padding: { bottom: 12 }
+          },
+          tooltip: {
+            backgroundColor: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,17,23,0.95)',
+            titleColor: textColor,
+            bodyColor: textColor,
+            borderColor: gridColor,
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              label: (context) => {
+                const i = context.dataIndex;
+                const raw = context.parsed.r;
+                const label = rLabels[i];
+                const statKey = rKeys[i];
+                const norm = RADAR_NORMALIZERS[statKey] || 10;
+                const realVal = (raw / 10 * norm).toFixed(1);
+                return `${label}: ${realVal}`;
+              }
+            }
+          }
         },
         scales: {
           r: {
-            beginAtZero: true, max: 10,
-            ticks: { display: false, stepSize: 2 },
-            grid: { color: gridColor },
-            angleLines: { color: gridColor },
-            pointLabels: { color: textColor, font: { size: 10 } }
+            beginAtZero: true,
+            max: 10,
+            backgroundColor: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)',
+            ticks: {
+              display: true,
+              backdropColor: 'transparent',
+              color: isLight ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.12)',
+              font: { size: 9 },
+              stepSize: 2,
+              z: 1
+            },
+            grid: {
+              color: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)',
+              circular: true
+            },
+            angleLines: {
+              color: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
+            },
+            pointLabels: {
+              color: textColor,
+              font: { size: 12, weight: '500' },
+              padding: 8
+            }
           }
         }
       }

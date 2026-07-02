@@ -524,12 +524,12 @@ body {
 }
 #dash-chart-wrapper {
   position: relative;
-  min-height: 300px;
+  min-height: 420px;
   margin-top: 8px;
 }
 #dash-chart-wrapper canvas {
   width: 100% !important;
-  height: 300px !important;
+  height: 420px !important;
 }
 
 /* ── Summary Grid ── */
@@ -1084,8 +1084,8 @@ body {
   .dash-controls { flex-direction: column; gap: 10px; }
   .dash-select { min-width: 100%; }
   .dash-control-group { flex-direction: column; align-items: stretch; }
-  #dash-chart-wrapper { min-height: 220px; }
-  #dash-chart-wrapper canvas { height: 220px !important; }
+  #dash-chart-wrapper { min-height: 280px; }
+  #dash-chart-wrapper canvas { height: 280px !important; }
   .rank-bar-cell { display: none; }
   .nav-btn { padding: 6px 10px; font-size: 12px; }
   .logo { font-size: 15px; }
