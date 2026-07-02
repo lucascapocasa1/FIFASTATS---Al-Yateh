@@ -359,6 +359,67 @@ body {
 .overlay-text { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .overlay-sub { font-size: 13px; color: var(--text-muted); }
 
+/* ── History Search ── */
+.history-search-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 20px 16px; position: relative;
+}
+.search-icon {
+  position: absolute; left: 28px; top: 10px;
+  font-size: 14px; color: var(--text-dim); pointer-events: none;
+}
+.history-search-input {
+  width: 100%; padding: 8px 12px 8px 32px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-size: 14px; outline: none; transition: var(--transition);
+}
+.history-search-input:focus { border-color: var(--accent); }
+
+/* ── Drag Handle ── */
+.preview-item { position: relative; cursor: grab; user-select: none; }
+.preview-item.dragging { opacity: 0.4; }
+.preview-item.drag-over { border-color: var(--accent); }
+.preview-drag-handle {
+  position: absolute; top: 4px; left: 4px;
+  background: rgba(0,0,0,0.5); color: #fff;
+  width: 24px; height: 24px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; cursor: grab; z-index: 2;
+}
+
+/* ── Position Selector ── */
+.preview-position-row {
+  padding: 8px 10px; display: flex; align-items: center; gap: 6px;
+  background: var(--bg3); border-top: 1px solid var(--border);
+}
+.preview-position-label { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.preview-position-select {
+  flex: 1; padding: 4px 6px; font-size: 11px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); outline: none;
+}
+
+/* ── Position Badge ── */
+.pos-badge {
+  display: inline-block; padding: 1px 7px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  background: var(--bg3); color: var(--text-dim);
+  border: 1px solid var(--border); white-space: nowrap;
+}
+
+/* ── Edit Mode ── */
+.match-edit-row { display: flex; gap: 8px; padding: 12px 16px; justify-content: flex-end; }
+.match-edit-input {
+  width: 60px; padding: 3px 6px; font-size: 12px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); text-align: center;
+  outline: none; transition: var(--transition);
+}
+.match-edit-input:focus { border-color: var(--accent); }
+.match-edit-input.pos-input { width: auto; min-width: 50px; }
+.match-stats-table td.editing { padding: 4px 6px; }
+
 /* ── Toast ── */
 .toast-container {
   position: fixed; bottom: 24px; right: 24px;

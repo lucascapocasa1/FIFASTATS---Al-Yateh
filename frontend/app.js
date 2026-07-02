@@ -1,6 +1,20 @@
 const API_URL = 'http://localhost:3001/api';
 const FETCH_TIMEOUT = 30000;
 
+const POSITIONS = [
+  { id: '', label: '— Sin posición' },
+  { id: 'GK', label: 'GK - Arquero' },
+  { id: 'DFCI', label: 'DFC Izquierdo' },
+  { id: 'DFC', label: 'DFC Central (Libero)' },
+  { id: 'DFCD', label: 'DFC Derecho' },
+  { id: 'MCD', label: 'MCD - 5 (Tapón)' },
+  { id: 'MD', label: 'MD - Extremo Derecho' },
+  { id: 'MI', label: 'MI - Extremo Izquierdo' },
+  { id: 'MCI', label: 'MCI - Medio Centro Izquierdo' },
+  { id: 'MCR', label: 'MCR - Mediocentro Derecho' },
+  { id: 'DC', label: 'DC - Delantero Centro' },
+];
+
 async function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -155,16 +169,52 @@ function renderPreviews() {
   count.textContent = state.files.length;
   grid.innerHTML = '';
 
+  const posOpts = POSITIONS.map(p =>
+    `<option value="${p.id}">${p.label}</option>`
+  ).join('');
+
   state.files.forEach((file, i) => {
     const url = URL.createObjectURL(file);
+    const pos = state.files[i]._posicion || '';
     const div = document.createElement('div');
     div.className = 'preview-item';
+    div.draggable = true;
+    div.dataset.index = i;
     div.innerHTML = `
+      <div class="preview-drag-handle">⠿</div>
       <img src="${url}" alt="${file.name}" />
       <div class="preview-name">${file.name}</div>
       <button class="preview-remove" title="Quitar" data-index="${i}">✕</button>
+      <div class="preview-position-row">
+        <span class="preview-position-label">Pos:</span>
+        <select class="preview-position-select" data-index="${i}">
+          ${posOpts.replace(`value="${pos}"`, `value="${pos}" selected`)}
+        </select>
+      </div>
     `;
     grid.appendChild(div);
+
+    div.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', i);
+      div.classList.add('dragging');
+    });
+    div.addEventListener('dragend', () => div.classList.remove('dragging'));
+    div.addEventListener('dragover', e => {
+      e.preventDefault();
+      div.classList.add('drag-over');
+    });
+    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+    div.addEventListener('drop', e => {
+      e.preventDefault();
+      div.classList.remove('drag-over');
+      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+      const toIdx = parseInt(div.dataset.index);
+      if (fromIdx !== toIdx) {
+        const [moved] = state.files.splice(fromIdx, 1);
+        state.files.splice(toIdx, 0, moved);
+        renderPreviews();
+      }
+    });
   });
 
   grid.querySelectorAll('.preview-remove').forEach(btn => {
@@ -173,6 +223,13 @@ function renderPreviews() {
       const idx = parseInt(btn.dataset.index);
       state.files.splice(idx, 1);
       renderPreviews();
+    });
+  });
+
+  grid.querySelectorAll('.preview-position-select').forEach(sel => {
+    sel.addEventListener('change', e => {
+      const idx = parseInt(e.target.dataset.index);
+      state.files[idx]._posicion = e.target.value;
     });
   });
 }
@@ -191,6 +248,13 @@ function initButtons() {
   document.getElementById('btn-save-all').addEventListener('click', saveAllPlayers);
   document.getElementById('btn-refresh').addEventListener('click', loadMatchHistory);
   document.getElementById('btn-rank-refresh').addEventListener('click', loadRanking);
+
+  const searchInput = document.getElementById('history-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      if (state.history.length) renderFilteredHistory();
+    });
+  }
 }
 
 // ── Process Images ──
@@ -231,10 +295,16 @@ async function processImages() {
 
     const data = await response.json();
     state.results = data.results;
+    // Car gar posición desde los archivos a los resultados
+    state.results.forEach((r, i) => {
+      if (r.data && state.files[i] && state.files[i]._posicion) {
+        r.data.posicion = state.files[i]._posicion;
+      }
+    });
     console.log('[processImages] Respuesta del servidor:', { total: data.total, exitosos: data.exitosos, fallidos: data.fallidos });
     console.log('[processImages] state.results.length =', state.results.length);
     data.results.forEach((r, i) => {
-      console.log(`[processImages] Resultado #${i}:`, r.filename, 'success:', r.success, 'jugador:', r.data?.jugador);
+      console.log(`[processImages] Resultado #${i}:`, r.filename, 'success:', r.success, 'jugador:', r.data?.jugador, 'pos:', r.data?.posicion);
     });
 
     console.log('[processImages] Llamando a renderResults...');
@@ -341,6 +411,19 @@ function renderResultBody(result, idx) {
       <div class="stat-label">👤 Jugador</div>
       <input type="text" class="stat-input" value="${d.jugador || ''}"
         data-result-idx="${idx}" data-stat="jugador" />
+    </div>
+  `;
+
+  // Position selector
+  const posOpts = POSITIONS.map(p =>
+    `<option value="${p.id}" ${d.posicion === p.id ? 'selected' : ''}>${p.label}</option>`
+  ).join('');
+  html += `
+    <div class="stat-cell" style="grid-column:1/-1">
+      <div class="stat-label">📌 Posición</div>
+      <select class="stat-input" data-result-idx="${idx}" data-stat="posicion">
+        ${posOpts}
+      </select>
     </div>
   `;
 
@@ -482,9 +565,9 @@ async function loadMatchHistory() {
     const response = await fetchWithTimeout(`${API_URL}/matches`);
     const data = await response.json();
 
-    const matches = data.data || [];
+    state.history = data.data || [];
 
-    if (!matches.length) {
+    if (!state.history.length) {
       container.innerHTML = `
         <div class="empty-state">
           <span class="empty-icon">📊</span>
@@ -493,7 +576,7 @@ async function loadMatchHistory() {
       return;
     }
 
-    renderMatchHistory(matches, container);
+    renderFilteredHistory();
 
   } catch (err) {
     container.innerHTML = `
@@ -503,6 +586,15 @@ async function loadMatchHistory() {
         <p style="margin-top:8px;font-size:12px;color:var(--text-dim)">Asegurate que el backend esté corriendo en localhost:3001</p>
       </div>`;
   }
+}
+
+function renderFilteredHistory() {
+  const query = (document.getElementById('history-search').value || '').toLowerCase().trim();
+  const filtered = query
+    ? state.history.filter(m => (m.rival || '').toLowerCase().includes(query))
+    : state.history;
+  const container = document.getElementById('history-container');
+  renderMatchHistory(filtered, container);
 }
 
 async function renderMatchHistory(matches, container) {
@@ -581,7 +673,7 @@ async function renderMatchHistory(matches, container) {
           const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`);
           const data = await res.json();
           if (data.data && data.data.stats) {
-            renderMatchPlayers(list, data.data.stats);
+            renderMatchPlayers(list, data.data.stats, matchId);
           } else {
             list.innerHTML = '<div class="empty-state"><p>Sin datos</p></div>';
           }
@@ -595,32 +687,160 @@ async function renderMatchHistory(matches, container) {
   });
 }
 
-function renderMatchPlayers(container, stats) {
+const HISTORY_STAT_FIELDS = [
+  { key: 'jugador', label: 'Jugador', type: 'text' },
+  { key: 'valoracion', label: 'Val', type: 'number', step: 0.1, min: 0, max: 10 },
+  { key: 'goles', label: 'G', type: 'number', step: 1, min: 0 },
+  { key: 'asistencias', label: 'A', type: 'number', step: 1, min: 0 },
+  { key: 'pases', label: 'Pases', type: 'number', step: 1, min: 0 },
+  { key: 'precision_pases', label: 'Prec.%', type: 'number', step: 1, min: 0, max: 100 },
+  { key: 'tiros', label: 'Tiros', type: 'number', step: 1, min: 0 },
+  { key: 'regates', label: 'Reg.', type: 'number', step: 1, min: 0 },
+  { key: 'entradas', label: 'Entr.', type: 'number', step: 1, min: 0 },
+];
+
+function renderMatchPlayers(container, stats, matchId) {
   if (!stats.length) {
     container.innerHTML = '<div class="empty-state"><p>Sin jugadores en este partido</p></div>';
     return;
   }
 
-  let html = '<div class="match-stats-table"><table><thead><tr>' +
-    '<th>Jugador</th><th>Val</th><th>G</th><th>A</th><th>Pases</th><th>Prec.%</th><th>Tiros</th><th>Reg.</th><th>Entr.</th></tr></thead><tbody>';
+  container.innerHTML = '';
+  const table = document.createElement('div');
+  table.className = 'match-stats-table';
+  table.innerHTML = buildMatchTable(stats);
+  container.appendChild(table);
+
+  const editRow = document.createElement('div');
+  editRow.className = 'match-edit-row';
+  editRow.innerHTML = `<button class="btn btn-sm btn-ghost btn-edit-match">✏️ Editar</button>`;
+  container.appendChild(editRow);
+
+  editRow.querySelector('.btn-edit-match').addEventListener('click', () => {
+    enterEditMode(container, stats, matchId);
+  });
+}
+
+function buildMatchTable(stats) {
+  let html = '<table><thead><tr>';
+  html += '<th>Pos</th>';
+  for (const f of HISTORY_STAT_FIELDS) {
+    html += `<th>${f.label}</th>`;
+  }
+  html += '</tr></thead><tbody>';
 
   for (const s of stats) {
     const valClass = s.valoracion >= 7.5 ? 'high' : s.valoracion >= 6 ? 'mid' : 'low';
-    html += `<tr>
-      <td class="player-name">${s.jugador || '—'}</td>
-      <td><span class="rating-badge ${valClass}">${s.valoracion ?? '—'}</span></td>
-      <td>${s.goles ?? '—'}</td>
-      <td>${s.asistencias ?? '—'}</td>
-      <td>${s.pases ?? '—'}</td>
-      <td>${s.precision_pases ?? '—'}</td>
-      <td>${s.tiros ?? '—'}</td>
-      <td>${s.regates ?? '—'}</td>
-      <td>${s.entradas ?? '—'}</td>
-    </tr>`;
+    const posLabel = s.posicion ? POSITIONS.find(p => p.id === s.posicion)?.label.split(' - ')[0] || s.posicion : '—';
+    html += '<tr>';
+    html += `<td><span class="pos-badge">${posLabel}</span></td>`;
+    html += `<td class="player-name">${s.jugador || '—'}</td>`;
+    html += `<td><span class="rating-badge ${valClass}">${s.valoracion ?? '—'}</span></td>`;
+    html += `<td>${s.goles ?? '—'}</td>`;
+    html += `<td>${s.asistencias ?? '—'}</td>`;
+    html += `<td>${s.pases ?? '—'}</td>`;
+    html += `<td>${s.precision_pases ?? '—'}</td>`;
+    html += `<td>${s.tiros ?? '—'}</td>`;
+    html += `<td>${s.regates ?? '—'}</td>`;
+    html += `<td>${s.entradas ?? '—'}</td>`;
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  return html;
+}
+
+function enterEditMode(container, stats, matchId) {
+  const posOpts = POSITIONS.map(p =>
+    `<option value="${p.id}">${p.label}</option>`
+  ).join('');
+
+  let html = '<div class="match-stats-table"><table><thead><tr>';
+  html += '<th>Pos</th><th>Jugador</th>';
+  for (const f of HISTORY_STAT_FIELDS.slice(1)) {
+    html += `<th>${f.label}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (const s of stats) {
+    html += '<tr>';
+    html += `<td><select class="match-edit-input pos-input edit-pos" data-id="${s.id}">
+      ${posOpts.replace(`value="${s.posicion || ''}"`, `value="${s.posicion || ''}" selected`)}
+    </select></td>`;
+    html += `<td><input class="match-edit-input edit-jugador" data-id="${s.id}" value="${s.jugador || ''}" /></td>`;
+    for (const f of HISTORY_STAT_FIELDS.slice(1)) {
+      const val = s[f.key];
+      const inputVal = val !== null && val !== undefined ? val : '';
+      html += `<td><input class="match-edit-input" data-id="${s.id}" data-key="${f.key}"
+        type="${f.type}" step="${f.step || ''}" min="${f.min ?? ''}" max="${f.max ?? ''}"
+        value="${inputVal}" /></td>`;
+    }
+    html += '</tr>';
   }
 
   html += '</tbody></table></div>';
+  html += `<div class="match-edit-row">
+    <button class="btn btn-sm btn-ghost btn-cancel-edit">Cancelar</button>
+    <button class="btn btn-sm btn-success btn-save-edit">💾 Guardar cambios</button>
+  </div>`;
+
   container.innerHTML = html;
+
+  container.querySelector('.btn-cancel-edit').addEventListener('click', () => {
+    renderMatchPlayers(container, stats, matchId);
+  });
+
+  container.querySelector('.btn-save-edit').addEventListener('click', async () => {
+    const inputs = container.querySelectorAll('[data-id]');
+    const updates = {};
+
+    for (const inp of inputs) {
+      const id = inp.dataset.id;
+      if (!updates[id]) updates[id] = { id: parseInt(id) };
+      if (inp.classList.contains('edit-jugador')) {
+        updates[id].jugador = inp.value;
+      } else if (inp.classList.contains('edit-pos')) {
+        updates[id].posicion = inp.value;
+      } else {
+        const key = inp.dataset.key;
+        const val = inp.value === '' ? null : parseFloat(inp.value);
+        updates[id][key] = val;
+      }
+    }
+
+    showOverlay('Guardando cambios...', '');
+    let hasError = false;
+
+    for (const entry of Object.values(updates)) {
+      try {
+        const res = await fetchWithTimeout(`${API_URL}/stats/${entry.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stats: entry })
+        }, 15000);
+        if (!res.ok) hasError = true;
+      } catch {
+        hasError = true;
+      }
+    }
+
+    hideOverlay();
+
+    if (hasError) {
+      toast('Algunos cambios no se guardaron', 'error');
+    } else {
+      toast('Cambios guardados', 'success');
+    }
+
+    // Recargar datos del partido
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/match/${matchId}`);
+      const data = await res.json();
+      if (data.data && data.data.stats) {
+        renderMatchPlayers(container, data.data.stats, matchId);
+      }
+    } catch {}
+  });
 }
 
 // ── Dashboard (unchanged) ──

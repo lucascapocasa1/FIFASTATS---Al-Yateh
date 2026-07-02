@@ -5,7 +5,7 @@ const router = express.Router();
 const { cropStatsPanel, cropPlayerName } = require('./imageProcessor');
 const { runOCR } = require('./ocr');
 const { parseStats, extractSelectedPlayer, validateStats } = require('./parser');
-const { insertStats, createMatch, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
+const { insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers } = require('./db');
 
 const CONCURRENCY = 3;
 
@@ -142,9 +142,7 @@ router.get('/matches', async (req, res) => {
 router.get('/match/:id', async (req, res) => {
   try {
     const matchId = parseInt(req.params.id);
-    // Buscar datos del partido entre los matches
-    const matches = await getMatches();
-    const match = matches.find(m => m.id === matchId);
+    const match = await getMatchById(matchId);
     if (!match) {
       return res.status(404).json({ error: 'Partido no encontrado' });
     }
@@ -206,6 +204,25 @@ router.get('/stats', async (req, res) => {
   try {
     const stats = await getAllStats();
     res.json({ total: stats.length, data: stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /stats/:id
+ * Actualiza un registro de estadísticas.
+ * Body: { stats: { ... } }
+ */
+router.put('/stats/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { stats } = req.body;
+    if (!stats) {
+      return res.status(400).json({ error: 'No se enviaron estadísticas' });
+    }
+    await updateStats(id, stats);
+    res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

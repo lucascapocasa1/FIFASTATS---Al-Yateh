@@ -58,6 +58,7 @@ async function getDB() {
 
   // Add match_id column if it doesn't exist (migration for old DBs)
   try { db.run('ALTER TABLE stats ADD COLUMN match_id INTEGER REFERENCES matches(id)'); } catch (e) {}
+  try { db.run("ALTER TABLE stats ADD COLUMN posicion TEXT DEFAULT ''"); } catch (e) {}
 
   saveDB();
   return db;
@@ -87,7 +88,7 @@ async function _insertStats(stats, matchId = null) {
     'pases', 'precision_pases', 'regates', 'exito_regates',
     'entradas', 'exito_entradas', 'fueras_de_juego', 'faltas',
     'posesion_ganada', 'posesion_perdida', 'minutos_jugados',
-    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion'
+    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion'
   ];
 
   const placeholders = fields.map(() => '?').join(', ');
@@ -140,7 +141,7 @@ async function getMatches() {
 
 async function getMatchStats(matchId) {
   const db = await getDB();
-  const stmt = db.prepare('SELECT * FROM stats WHERE match_id = ? ORDER BY jugador ASC');
+  const stmt = db.prepare("SELECT * FROM stats WHERE match_id = ? ORDER BY CASE posicion WHEN '' THEN 1 ELSE 0 END, posicion ASC, jugador ASC");
   stmt.bind([matchId]);
   const values = [];
   while (stmt.step()) {
@@ -151,6 +152,40 @@ async function getMatchStats(matchId) {
   }
   stmt.free();
   return values;
+}
+
+async function getMatchById(matchId) {
+  const db = await getDB();
+  const result = db.exec(`
+    SELECT m.*, COUNT(s.id) as jugadores
+    FROM matches m
+    LEFT JOIN stats s ON s.match_id = m.id
+    WHERE m.id = ?
+    GROUP BY m.id
+  `, [matchId]);
+  if (!result.length || !result[0].values.length) return null;
+  const { columns, values } = result[0];
+  const obj = {};
+  columns.forEach((col, i) => { obj[col] = values[0][i]; });
+  return obj;
+}
+
+async function _updateStats(id, data) {
+  console.log('[DB] updateStats - id:', id, 'jugador:', data?.jugador);
+  const db = await getDB();
+  const allowed = [
+    'jugador', 'goles', 'asistencias', 'tiros', 'precision_tiros',
+    'pases', 'precision_pases', 'regates', 'exito_regates',
+    'entradas', 'exito_entradas', 'fueras_de_juego', 'faltas',
+    'posesion_ganada', 'posesion_perdida', 'minutos_jugados',
+    'distancia_recorrida_km', 'distancia_sprint_km', 'valoracion', 'posicion'
+  ];
+  const sets = allowed.filter(f => f in data).map(f => `${f} = ?`);
+  const values = allowed.filter(f => f in data).map(f => data[f]);
+  if (!sets.length) throw new Error('No hay campos para actualizar');
+  values.push(id);
+  db.run(`UPDATE stats SET ${sets.join(', ')} WHERE id = ?`, values);
+  saveDB();
 }
 
 async function _deleteStats(id) {
@@ -244,7 +279,8 @@ async function getAllStats() {
 
 const insertStats = serialized(_insertStats);
 const createMatch = serialized(_createMatch);
+const updateStats = serialized(_updateStats);
 const deleteStats = serialized(_deleteStats);
 const deleteMatch = serialized(_deleteMatch);
 
-module.exports = { getDB, insertStats, createMatch, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };
+module.exports = { getDB, insertStats, createMatch, updateStats, getMatchById, getMatches, getMatchStats, getAllStats, deleteStats, deleteMatch, getLeaderboard, getStatsByPlayer, getAllPlayers };
