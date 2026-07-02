@@ -428,9 +428,9 @@ function renderResultBody(result, idx) {
   `;
 
   const statsConfig = [
+    { key: 'valoracion',           label: 'Valoración',            emoji: '⭐', step: 0.1 },
     { key: 'goles',                label: 'Goles',                 emoji: '⚽', step: 1 },
     { key: 'asistencias',          label: 'Asistencias',           emoji: '🎯', step: 1 },
-    { key: 'valoracion',           label: 'Valoración',            emoji: '⭐', step: 0.1 },
     { key: 'tiros',                label: 'Tiros',                 emoji: '🏃', step: 1 },
     { key: 'precision_tiros',      label: 'Precisión tiros %',     emoji: '🎯', step: 1 },
     { key: 'pases',                label: 'Pases',                 emoji: '↗', step: 1 },
@@ -705,7 +705,25 @@ function renderMatchPlayers(container, stats, matchId) {
     return;
   }
 
+  // Determinar MVP (mayor valoración, random si empate)
+  let maxVal = -1;
+  let mvps = [];
+  for (const s of stats) {
+    const v = s.valoracion != null ? s.valoracion : -1;
+    if (v > maxVal) { maxVal = v; mvps = [s.jugador]; }
+    else if (v === maxVal && v >= 0) { mvps.push(s.jugador); }
+  }
+  const mvpName = mvps.length > 0 ? mvps[Math.floor(Math.random() * mvps.length)] : null;
+
   container.innerHTML = '';
+
+  // Pitch view
+  const pitchHtml = renderPitchView(stats, mvpName);
+  const pitchDiv = document.createElement('div');
+  pitchDiv.innerHTML = pitchHtml;
+  container.appendChild(pitchDiv.firstElementChild);
+
+  // Stats table
   const table = document.createElement('div');
   table.className = 'match-stats-table';
   table.innerHTML = buildMatchTable(stats);
@@ -721,20 +739,108 @@ function renderMatchPlayers(container, stats, matchId) {
   });
 }
 
+function renderPitchView(stats, mvpName) {
+  const gridPos = {
+    GK:  { row: 5, col: 3 },
+    DFCI: { row: 4, col: 2 },
+    DFC:  { row: 4, col: 3 },
+    DFCD: { row: 4, col: 4 },
+    MCD:  { row: 3, col: 3 },
+    MI:   { row: 2, col: 1 },
+    MCI:  { row: 2, col: 2 },
+    MCR:  { row: 2, col: 4 },
+    MD:   { row: 2, col: 5 },
+    DC:   { row: 1, col: 2 },
+  };
+
+  // Build grid cells: 5 rows x 5 cols
+  const grid = Array.from({ length: 5 }, () => Array(5).fill(null));
+
+  let dcCount = 0;
+  const unplaced = [];
+
+  for (const s of stats) {
+    const pos = s.posicion || '';
+    if (pos === 'DC') {
+      dcCount++;
+      const col = dcCount === 1 ? 2 : 4;
+      const row = 1;
+      grid[row - 1][col - 1] = { ...s, _mvp: s.jugador === mvpName };
+    } else if (gridPos[pos]) {
+      const { row, col } = gridPos[pos];
+      grid[row - 1][col - 1] = { ...s, _mvp: s.jugador === mvpName };
+    } else {
+      unplaced.push(s);
+    }
+  }
+
+  let html = '<div class="pitch-container"><div class="pitch">';
+  html += '<div class="pitch-lines">';
+  html += '<div class="pitch-center-circle"></div>';
+  html += '<div class="pitch-center-line"></div>';
+  html += '<div class="pitch-penalty-top"></div>';
+  html += '<div class="pitch-penalty-bottom"></div>';
+  html += '</div>';
+
+  html += '<div class="pitch-grid">';
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      const p = grid[r][c];
+      if (p) {
+        const valClass = p.valoracion >= 7.5 ? 'high' : p.valoracion >= 6 ? 'mid' : 'low';
+        html += `<div class="pitch-cell" style="grid-row:${r+1};grid-column:${c+1}">`;
+        html += `<div class="pitch-player ${p._mvp ? 'mvp' : ''}">`;
+        html += `<div class="pitch-player-name">${p.jugador || '?'}</div>`;
+        html += `<div class="pitch-player-val ${valClass}">${p.valoracion != null ? p.valoracion.toFixed(1) : '—'}</div>`;
+        if (p._mvp) html += '<div class="pitch-mvp-badge">MVP</div>';
+        html += '</div></div>';
+      } else {
+        html += `<div class="pitch-cell empty" style="grid-row:${r+1};grid-column:${c+1}"></div>`;
+      }
+    }
+  }
+  html += '</div></div>';
+
+  // Unplaced players
+  if (unplaced.length) {
+    html += '<div class="pitch-unplaced">';
+    html += '<div class="pitch-unplaced-title">Sin posición asignada:</div>';
+    for (const p of unplaced) {
+      html += `<span class="pos-badge">${p.jugador || '?'}</span>`;
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
 function buildMatchTable(stats) {
+  // Pre-determine MVP for highlighting
+  let maxVal = -1;
+  let mvps = [];
+  for (const s of stats) {
+    const v = s.valoracion != null ? s.valoracion : -1;
+    if (v > maxVal) { maxVal = v; mvps = [s.jugador]; }
+    else if (v === maxVal && v >= 0) { mvps.push(s.jugador); }
+  }
+  const mvpName = mvps.length > 0 ? mvps[Math.floor(Math.random() * mvps.length)] : null;
+
   let html = '<table><thead><tr>';
   html += '<th>Pos</th>';
   for (const f of HISTORY_STAT_FIELDS) {
     html += `<th>${f.label}</th>`;
   }
+  html += '<th></th>';
   html += '</tr></thead><tbody>';
 
   for (const s of stats) {
     const valClass = s.valoracion >= 7.5 ? 'high' : s.valoracion >= 6 ? 'mid' : 'low';
     const posLabel = s.posicion ? POSITIONS.find(p => p.id === s.posicion)?.label.split(' - ')[0] || s.posicion : '—';
+    const isMvp = s.jugador === mvpName;
     html += '<tr>';
     html += `<td><span class="pos-badge">${posLabel}</span></td>`;
-    html += `<td class="player-name">${s.jugador || '—'}</td>`;
+    html += `<td class="player-name">${s.jugador || '—'}${isMvp ? ' 👑' : ''}</td>`;
     html += `<td><span class="rating-badge ${valClass}">${s.valoracion ?? '—'}</span></td>`;
     html += `<td>${s.goles ?? '—'}</td>`;
     html += `<td>${s.asistencias ?? '—'}</td>`;
