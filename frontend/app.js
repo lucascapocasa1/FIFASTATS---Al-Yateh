@@ -325,7 +325,7 @@ async function processImages() {
     const response = await fetchWithTimeout(`${API_URL}/upload`, {
       method: 'POST',
       body: formData
-    }, 120000);
+    }, 180000);
 
     if (!response.ok) {
       const err = await response.json();
@@ -352,7 +352,7 @@ async function processImages() {
 
   } catch (err) {
     console.error(err);
-    toast(`Error: ${err.message}`, 'error');
+    toast('Error procesando imágenes: ' + (err.message || 'timeout — intentá con menos imágenes'), 'error');
   } finally {
     state.processing = false;
     hideOverlay();
@@ -1585,33 +1585,39 @@ function initDashboard() {
 async function loadDashboardPlayers() {
   const select = document.getElementById('dash-player');
   const select2 = document.getElementById('dash-player2');
+  if (!select || !select2) return;
   const currentValue = select.value;
+
+  // Poblar primero con nombres canónicos (fallback instantáneo)
+  select.innerHTML = '<option value="">-- Seleccionar --</option>';
+  select2.innerHTML = '<option value="">-- Seleccionar --</option>';
+  CANONICAL_NAMES.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p; select.appendChild(opt);
+    const opt2 = document.createElement('option');
+    opt2.value = p; opt2.textContent = p; select2.appendChild(opt2);
+  });
+  if (currentValue) select.value = currentValue;
+
+  // Luego intentar actualizar desde la API
   try {
     const res = await fetchWithTimeout(`${API_URL}/players`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.data) throw new Error('Respuesta inválida del servidor');
-    const players = data.data || [];
-    select.innerHTML = '<option value="">-- Seleccionar --</option>';
-    select2.innerHTML = '<option value="">-- Seleccionar --</option>';
-    players.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p;
-      opt.textContent = p;
-      select.appendChild(opt);
-      const opt2 = document.createElement('option');
-      opt2.value = p;
-      opt2.textContent = p;
-      select2.appendChild(opt2);
-    });
-    if (currentValue) select.value = currentValue;
-  } catch (e) {
-    console.error('Error cargando jugadores:', e);
-    const empty = document.getElementById('dash-empty');
-    if (empty) {
-      empty.style.display = 'block';
-      empty.innerHTML = `<span class="empty-icon">❌</span><p>Error cargando jugadores: ${e.message}</p>`;
+    const players = data.data;
+    if (players && players.length) {
+      select.innerHTML = '<option value="">-- Seleccionar --</option>';
+      select2.innerHTML = '<option value="">-- Seleccionar --</option>';
+      players.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p; opt.textContent = p; select.appendChild(opt);
+        const opt2 = document.createElement('option');
+        opt2.value = p; opt2.textContent = p; select2.appendChild(opt2);
+      });
+      if (currentValue) select.value = currentValue;
     }
+  } catch (e) {
+    console.warn('No se pudo actualizar jugadores desde API, usando fallback:', e.message);
   }
 }
 
