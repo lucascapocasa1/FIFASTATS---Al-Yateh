@@ -29,7 +29,7 @@ const imageUpload = multer({
   }
 });
 
-const CONCURRENCY = 3;
+const CONCURRENCY = 2;
 
 async function processSingleImage(file, index) {
   const result = {

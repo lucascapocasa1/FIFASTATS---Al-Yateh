@@ -1,6 +1,6 @@
 const { createWorker } = require('tesseract.js');
 
-const POOL_SIZE = 3;
+const POOL_SIZE = 2;
 let pool = [];
 let ready = false;
 
@@ -18,8 +18,12 @@ async function getPool() {
     pool.push({ worker, inUse: false });
   }
   ready = true;
+  console.log('[OCR] Workers listos (' + POOL_SIZE + ')');
   return pool;
 }
+
+// Pre-calentar los workers al iniciar (sin esperar)
+getPool().catch(err => console.error('[OCR] Error iniciando workers:', err));
 
 async function acquireWorker() {
   const p = await getPool();
