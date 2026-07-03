@@ -1,5 +1,39 @@
+# Dependencias
 node_modules/
+
+# Bases de datos (contienen datos personales)
 *.db
+*.sqlite
+*.sqlite3
+
+# Variables de entorno y credenciales
 .env
+.env.local
+.env.production
+.env.development
+.env.staging
+
+# Archivos locales de credenciales/notas
+_credenciales*
+_credenciales_locales*
+_secretos*
+*credencial*
+*contra-*
+*password*
+
+# Archivos del sistema
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Directorio de uploads (imágenes subidas por usuarios)
+uploads/*
+!uploads/.gitkeep
+
+# Coverage y reportes
+coverage/
+nyc_output/

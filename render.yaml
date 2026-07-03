@@ -2,7 +2,7 @@ services:
   - type: web
     name: fifa-stats
     env: docker
-    repo: https://github.com/TU_USUARIO/fifa-stats
+    repo: https://github.com/YOUR_USERNAME/fifa-stats
     plan: free
     dockerfilePath: ./Dockerfile
     envVars:
